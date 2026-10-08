@@ -1579,7 +1579,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     ['divorce', 'Divorce', 15000, 0, 0, 1, 'lawyers and court, often $15,000 or more, and savings split in half'],
   ];
   const AREA = { low: { rent: 1000, home: 250000, pay: 0.9, label: 'Lower-cost area' }, avg: { rent: 1450, home: 400000, pay: 1, label: 'Average area' }, high: { rent: 2300, home: 750000, pay: 1.2, label: 'Higher-cost area' } };
-  const startDefaults = () => ({ age: 18, saved: 0, job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, milYears: 4, second: '', gi: true, va: 0, det: {} });
+  const startDefaults = () => ({ age: 18, saved: 0, job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, matchPct: '4', milYears: 4, second: '', gi: true, va: 0, det: {} });
   const SP = () => { const p = S.start = Object.assign({ cur: 'A', compare: false }, S.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
 
   // income tax, today's dollars: 2026 federal brackets (single, or joint once married on one income), Social Security
@@ -1663,7 +1663,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       if (homeBal > 0) { const hp = homePrice * 0.9 * 0.0042 * 12; homeBal = Math.max(0, homeBal * 1.03 - hp); }
       let save = net > 0 ? net * num(P.save) / 100 : 0;
       // a 401(k) match from a civilian employer; in uniform, the Thrift Savings Plan matches up to 5% of base pay
-      const match = serving ? 0.05 * 0.65 * gross : P.match && !school && gross > 0 ? gross * 0.04 : 0;
+      const matchPct = P.matchPct != null ? num(P.matchPct) : P.match === false ? 0 : 4;
+      const match = serving ? 0.05 * 0.65 * gross : !school && gross > 0 ? gross * matchPct / 100 : 0;
       let spare = net - living - detourCost - lp - save;
       if (spare < 0) { const cut = Math.min(save, -spare); save -= cut; spare += cut; }
       if (spare < -1 && !school) { if (shortAt == null) shortAt = a; shortBy = Math.max(shortBy, -spare / 12); }
@@ -1763,7 +1764,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
           + (P.marry !== false ? f('At age', inp('wedding', P.wedding, '28'), 'n') + f('Wedding cost', inp('weddingCost', P.weddingCost, '0'), 'm') + f("Spouse's pay a year", inp('spousePay', P.spousePay, '0'), 'm') : '')
           + f('Kids', inp('kids', P.kids, '0'), 'n') + (num(P.kids) ? f('First at age', inp('kidAge', P.kidAge, '30'), 'n') : ''),
           num(P.kids) ? 'Each child about $1,500 a month until 18 (USDA estimate, updated for inflation).' : '');
-        out += grp('Saving', f('Save of take-home (%)', inp('save', P.save, '10'), 'n') + chk('match', P.match, 'Employer matches 4% into a 401(k)'));
+        out += grp('Saving', f('Save of take-home (%)', inp('save', P.save, '10'), 'n') + f('Employer match (% of pay)', inp('matchPct', P.matchPct != null ? P.matchPct : P.match === false ? 0 : 4, '4'), 'n'),
+          'The match is money your employer adds to a 401(k) when you save into it, often 3-6% of pay; 0 if there is none. In uniform, the Thrift Savings Plan matches up to 5% of base pay.');
         return out;
       })()}</div></div>`;
 
