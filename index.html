@@ -127,6 +127,9 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .ask-head h2 { font-size: 22px; }
 .ask-head p { margin: 0; font-size: 14px; color: var(--muted); max-width: 70ch; }
 .qgroup { padding: 6px 18px 12px; }
+.paychecks > summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+.paychecks > summary b { color: var(--ink); }
+.paychecks[open] > summary { margin-bottom: 8px; }
 .qinfo { margin: 0 18px 14px; padding: 8px 12px; border-radius: var(--r); background: var(--sunk); font-size: 14px; }
 .qinfo summary { cursor: pointer; color: var(--muted); }
 .qinfo summary b { color: var(--ink); }
@@ -261,7 +264,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <h1>FIRE <b>Mission</b></h1>
       <span class="expand"><b>F</b>inancial <b>I</b>ndependence, <b>R</b>etire <b>E</b>arly</span>
       <p class="pg-spend">Drop in the exports from your bank, credit cards and investment accounts. See what comes in, where it goes and what you keep, with transfers between your own accounts taken out so nothing counts twice.</p>
-      <p class="pg-taxes">What was taxed and withheld, how your savings are taxed, and the earnings Social Security has on record. Built from pay stubs, W-2s and your Social Security statement.</p>
+      <p class="pg-taxes">Where your pay goes before it reaches the bank, what was taxed and withheld, and the earnings Social Security has on record. Built from pay stubs or an LES, W-2s, 1099-Rs, 1098s and your Social Security statement.</p>
       <p class="pg-invest">What your investments are worth, what it takes to stop working, and when you could. Built from your own statements, or numbers you type in.</p>
       <span class="disclaim">Free tools, not financial, tax or investment advice</span>
     </div>
@@ -270,7 +273,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     <nav class="pages" aria-label="Pages">
       <a href="#spending" data-page="spend">Spending</a>
       <a href="#invest" data-page="invest"><span class="long">Investments &amp; </span>FIRE</a>
-      <a href="#taxes" data-page="taxes">Taxes</a>
+      <a href="#taxes" data-page="taxes"><span class="long">Pay &amp; </span>Taxes</a>
     </nav>
     <label class="minidrop" id="minidrop" for="fileIn" title="Add statements: click, or drop files anywhere on the page">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -619,7 +622,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     el.innerHTML = h;
   }
 
-  const TABS = [['months', 'By month'], ['categories', 'Where it goes'], ['income', 'Income'], ['pay', 'Pay'], ['recurring', 'Recurring'], ['transfers', 'Transfers'], ['flags', 'Check these'], ['txns', 'All transactions']];
+  const TABS = [['months', 'By month'], ['categories', 'Where it goes'], ['income', 'Income'], ['recurring', 'Recurring'], ['transfers', 'Transfers'], ['flags', 'Check these'], ['txns', 'All transactions']];
 
   function renderTabs() {
     const R = S.result;
@@ -628,7 +631,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     $('tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === 'flags' && flagN ? `<span class="count">${flagN}</span>` : ''}${k === 'recurring' && recUp ? `<span class="count">${recUp} up</span>` : ''}</button>`).join('');
     const b = $('tabbody');
     if (!R) { b.innerHTML = ''; return; }
-    b.innerHTML = ({ months: tabMonths, categories: tabCats, income: tabIncome, pay: tabPay, recurring: tabRecurring, transfers: tabTransfers, flags: tabFlags, txns: tabTxns })[S.tab](R);
+    b.innerHTML = ({ months: tabMonths, categories: tabCats, income: tabIncome, recurring: tabRecurring, transfers: tabTransfers, flags: tabFlags, txns: tabTxns })[S.tab](R);
   }
 
   function tabMonths(R) {
@@ -673,8 +676,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <table><tr><th>Source</th><th>Kind</th><th>How often</th><th></th><th class="r">Total</th><th class="r">Per month</th></tr>${rows}</table></div>`;
   }
 
-  function tabPay(R) {
-    if (!R.pay || !R.pay.length) return '<div class="empty">Drop pay stub PDFs to see where your pay goes before it reaches the bank: taxes, benefits, retirement and stock plans.</div>';
+  function payHTML(R) {
+    if (!R.pay || !R.pay.length) return '';
     return R.pay.map(p => {
       const y = p.ytd || {}, L = p.lines, all = [...L.before, ...L.after];
       const k = kind => all.filter(l => l.kind === kind).reduce((x, l) => x + l.ytd, 0);
@@ -692,22 +695,13 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         ${other ? row('Insurance, dues and other', other, '', names('other')) : ''}
         ${row('<b>Take-home</b>', y.net || 0, 'in', p.found.length ? `deposited to ${esc([...new Set(p.found.map(f => f.account))].join(', '))}` : '')}</table>`;
       const empRet = L.employer.filter(l => l.kind === 'retire').reduce((x, l) => x + l.ytd, 0), empOther = L.employer.filter(l => l.kind !== 'retire').reduce((x, l) => x + l.ytd, 0);
-      // plain names for payroll tax codes; Social Security stops at the yearly wage base (2026: $184,500 → $11,439)
-      const TAXNAME = [[/fed(eral)?\s*(withh|income)|\bFIT\b/i, 'Federal income tax'], [/OASDI|soc(ial)? sec/i, 'Social Security'], [/\bMED\b|medicare/i, 'Medicare'],
-        [/\bFLI\b|family leave|PFML/i, 'State paid family leave'], [/\bMLI\b|long.?term care|WA Cares/i, 'State long-term care'], [/\bSDI\b/i, 'State disability'], [/\bSIT\b|state (income|withh)/i, 'State income tax']];
-      const nice = n => { const m = TAXNAME.find(([re]) => re.test(n)); return m && m[1].toLowerCase() !== n.toLowerCase() ? `${m[1]} <span class="muted" style="font-size:12px">${esc(n)}</span>` : esc(n); };
-      const tpace = l => /OASDI|soc(ial)? sec/i.test(l.name) ? Math.min(l.ytd * p.scale, Math.max(l.ytd, 11439)) : l.ytd * p.scale;
-      const taxRows = L.taxes.map(l => `<tr><td>${nice(l.name)}</td><td class="r num">${usd0(l.ytd)}</td><td class="r num muted">${usd0(tpace(l))}</td></tr>`).join('');
-      const fedRate = p.fedWithheldYtd && y.taxable ? p.fedWithheldYtd / y.taxable : null;
       const stubs = p.stubs.slice().reverse().map(s => { const f = p.found.find(x => x.payDate === s.payDate); return `<tr><td class="num">${s.payDate}</td><td class="muted num">${s.begin || ''} – ${s.end || ''}</td><td class="r num">${usd2(s.gross)}</td><td class="r num">${usd2(s.net)}</td><td class="${f ? '' : 'muted'}">${f ? 'in ' + esc(f.account) + ' ' + f.date : 'not in the bank files loaded'}</td></tr>`; }).join('');
       return `<div class="card tablewrap"><h3>${esc(p.employer)}: where your pay goes</h3><p>From ${p.stubs.length} ${p.les ? 'LES' : 'pay stub' + (p.stubs.length > 1 ? 's' : '')}; the newest covers ${String(p.ytdThrough).slice(0, 4)} through ${p.ytdThrough}. Yearly pace scales that to 12 months.</p>${where}
         ${p.les && p.allowances.some(a => a.amount > 0) ? `<p style="margin:10px 0 0">Not taxed: ${p.allowances.filter(a => a.amount > 0).map(a => `${esc(a.name)} ${usd0(a.amount)}`).join(', ')} a month. That's why taxable pay is lower than gross.</p>` : ''}
         ${empRet || empOther ? `<p style="margin:10px 0 0">Your employer also put <b class="in">${usd0(empRet)}</b> into your retirement plan${empOther ? ` and paid <b>${usd0(empOther)}</b> toward benefits` : ''} this year.</p>` : ''}
         ${p.stockYtd || (!p.planLoaded && p.retireYtd) ? `<p class="muted" style="margin:6px 0 0;font-size:13px">Counted in Invested: ${[p.stockYtd ? 'the stock plan' : '', !p.planLoaded && p.retireYtd ? 'retirement deductions and match' : ''].filter(Boolean).join(' and ')}${p.planLoaded ? '; your plan statement already counts the 401(k)' : ''}.</p>` : ''}</div>
-        <div class="split"><div class="card tablewrap"><h3>Taxes taken out</h3>
-          <p>${usd0(taxT)} so far, ${share(taxT)} of gross.${fedRate != null ? ` Federal withholding is ${pct1(fedRate)} of federal taxable pay (${usd0(y.taxable)}).` : ''} Withholding is an estimate your employer sends in; your return settles the actual tax.</p>
-          <table><tr><th>Tax</th><th class="r">So far</th><th class="r">Yearly pace</th></tr>${taxRows}</table></div>
-        <div class="card tablewrap"><h3>Paychecks</h3><table><tr><th>Paid</th><th>Period</th><th class="r">Gross</th><th class="r">Take-home</th><th>Found</th></tr>${stubs}</table></div></div>`;
+        <details class="card tablewrap paychecks"><summary><b>${p.stubs.length} paycheck${p.stubs.length > 1 ? 's' : ''}</b> · ${p.found.length ? `${p.found.length} found in your bank files` : 'not in the bank files loaded'}</summary>
+          <table><tr><th>Paid</th><th>Period</th><th class="r">Gross</th><th class="r">Take-home</th><th>Found</th></tr>${stubs}</table></details>`;
     }).join('');
   }
 
@@ -796,7 +790,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         ${line('Withheld at this pace', e.paid)}
         <tr><td><b>${e.balance >= 0 ? 'Rough refund' : 'Rough amount owed'}</b></td><td class="r num ${e.balance >= 0 ? 'in' : 'out'}"><b>${usd0(Math.abs(e.balance))}</b></td></tr>
       </table></div></div>
-      <p class="estimate">A rough estimate from your files and the numbers above, not a tax return and not tax advice. Social Security and Medicare are separate and already shown above.</p></div>`;
+      <p class="estimate">A rough estimate from your files and the numbers above, not a tax return and not tax advice. Social Security and Medicare are separate; they are in the withholding table on this page.</p></div>`;
   }
 
   function renderTaxes() {
@@ -821,7 +815,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <span class="sub">${T.ss ? `plus ${usd0(T.medicare || 0)} Medicare; employers paid about the same` : 'add your Social Security statement'}</span></div>
     </div></div>
     <p class="estimate">Facts from your documents, not tax advice. Your return settles what you actually owe.</p>`;
-    el.innerHTML = h + taxEstimateHTML(R) + tabTaxes(R);
+    el.innerHTML = h + payHTML(R) + taxEstimateHTML(R) + tabTaxes(R);
   }
 
   function tabTaxes(R) {
