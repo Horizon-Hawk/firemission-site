@@ -793,6 +793,46 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <p class="estimate">A rough estimate from your files and the numbers above, not a tax return and not tax advice. Social Security and Medicare are separate; they are in the withholding table on this page.</p></div>`;
   }
 
+  /* Pre-tax or Roth comes down to the tax rate when the money goes in versus when it comes out. "Now" is this year's
+     estimate; "later" is the FIRE projection's taxable income in retirement (taxable retired pay and rental profit,
+     85% of Social Security, pre-tax withdrawals and required withdrawals), at today's brackets and dollars. */
+  function rothHTML(R) {
+    let m;
+    try { m = fireModel(); } catch (e) { return ''; }
+    const e = taxEstimate(R), rows = m.rows || [];
+    const pays = R.pay || [], ret = pays.flatMap(p => [...p.lines.before, ...p.lines.after].filter(l => l.kind === 'retire'));
+    const rothNow = ret.filter(l => /roth/i.test(l.name)).reduce((x, l) => x + l.ytd, 0), preNow = ret.reduce((x, l) => x + l.ytd, 0) - rothNow;
+    const plan = m.accts.find(a => a.rothShare != null);
+    if (!rows.length || (!preNow && !rothNow && !plan)) return '';
+    const pension = m.life.filter(l => l.on && l.type === 'pension').reduce((x, l) => x + l.monthly * 12, 0);
+    const rentOn = m.life.some(l => l.on && l.type === 'rental');
+    const later = a => {
+      const r = rows.find(x => x.age === a); if (!r) return null;
+      const inc = pension + (rentOn ? e.v.rental : 0) + (a >= m.ssAge ? 0.85 * m.ss * 12 : 0) + (r.preDraw || 0);
+      return { age: a, year: r.year, income: inc, taxable: Math.max(0, inc - e.std), rate: bracketOf(Math.max(0, inc - e.std)) };
+    };
+    const pts = [...new Set([m.ra, Math.max(m.ra, m.ssAge), Math.max(m.ra, m.rmdAge)])].map(later).filter(Boolean);
+    const label = p => p.age === m.ra && p.age < m.ssAge ? `At ${p.age}, after you stop working` : p.age === m.ssAge || (p.age === m.ra && p.age >= m.ssAge) ? `At ${p.age}, Social Security starts` : `At ${p.age}, required withdrawals start`;
+    const rates = pts.map(p => p.rate), lo = Math.min(...rates), hi = Math.max(...rates), now = e.marginal;
+    const verdict = hi < now ? 'Your bracket later looks lower than now. That is the case where pre-tax usually comes out ahead.'
+      : lo > now ? 'Your bracket later looks higher than now. That is the case where Roth usually comes out ahead.'
+      : hi <= now ? 'Your bracket later looks the same as now or lower, never higher. That leans toward pre-tax; where it is the same, the two come out about even.'
+      : lo >= now ? 'Your bracket later looks the same as now or higher. That leans toward Roth.'
+      : 'Your bracket later is lower in some years and higher in others, so the two come out close; splitting between them spreads the bet.';
+    const gap = pts.find(p => p.rate < now && p.age < m.ssAge);
+    const gapTxt = gap ? ` The years from ${gap.age} until Social Security starts are low-tax years (${Math.round(gap.rate * 100)}%), since there's no paycheck yet and less income overall.` : '';
+    const pctTxt = r => Math.round(r * 100) + '%';
+    return `<div class="card tablewrap"><h3>Pre-tax or Roth 401(k)?</h3>
+      <p>Pre-tax skips tax now at your top bracket and is taxed when you withdraw it. Roth is taxed now and comes out tax-free. So it comes down to your bracket now versus later.</p>
+      <table><tr><th></th><th class="r">Taxable income</th><th class="r">Top bracket</th></tr>
+        <tr class="fi"><td>Now (${new Date().getFullYear()})</td><td class="r num">${usd0(e.taxable)}</td><td class="r num"><b>${pctTxt(now)}</b></td></tr>
+        ${pts.map(p => `<tr><td>${label(p)} <span class="muted" style="font-size:12px">${p.year}</span></td><td class="r num">${usd0(p.taxable)}</td><td class="r num"><b>${pctTxt(p.rate)}</b></td></tr>`).join('')}
+      </table>
+      <p style="margin:10px 0 0">${verdict}${gapTxt}</p>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">${preNow || rothNow ? `This year so far: ${usd0(preNow)} pre-tax, ${usd0(rothNow)} Roth.` : ''}${plan ? ` Your ${esc(plan.name)} is ${Math.round((1 - plan.rothShare) * 100)}% pre-tax and ${Math.round(plan.rothShare * 100)}% Roth.` : ''}
+        Retirement income here comes from the Investments &amp; FIRE page (retired pay, rental profit, 85% of Social Security and what comes out of pre-tax accounts), in today's dollars at today's brackets. Tax law can change. Not tax advice.</p></div>`;
+  }
+
   function renderTaxes() {
     const el = $('taxesPage');
     if (document.body.dataset.page !== 'taxes') return;
@@ -815,7 +855,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <span class="sub">${T.ss ? `plus ${usd0(T.medicare || 0)} Medicare; employers paid about the same` : 'add your Social Security statement'}</span></div>
     </div></div>
     <p class="estimate">Facts from your documents, not tax advice. Your return settles what you actually owe.</p>`;
-    el.innerHTML = h + payHTML(R) + taxEstimateHTML(R) + tabTaxes(R);
+    el.innerHTML = h + payHTML(R) + taxEstimateHTML(R) + rothHTML(R) + tabTaxes(R);
   }
 
   function tabTaxes(R) {
@@ -1162,16 +1202,16 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         const need = spend - covered, fiNum = need * 12 / (1 - tax) / wr, working = a < stop;
         const bal = Math.max(0, pre) + Math.max(0, roth) + Math.max(0, txb);
         const rmd = a >= rmdAge && pre > 0 ? pre / (ULT[Math.min(a, 100)] || 6.4) : 0;
-        let left = working ? 0 : need * 12, taxes = 0;
+        let left = working ? 0 : need * 12, taxes = 0, preDraw = rmd;
         pre -= rmd; taxes += rmd * tax;
         const fromRmd = Math.min(left, rmd * (1 - tax)); left -= fromRmd; txb += rmd * (1 - tax) - fromRmd;
         if (!working) {
           let x = Math.min(txb, left); txb -= x; left -= x;
-          x = Math.min(pre, left / (1 - tax)); pre -= x; taxes += x * tax; left -= x * (1 - tax);
+          x = Math.min(pre, left / (1 - tax)); pre -= x; preDraw += x; taxes += x * tax; left -= x * (1 - tax);
           x = Math.min(roth, left); roth -= x; left -= x;
           if (left > 1 && outAge == null) outAge = a;
         }
-        out.push({ age: a, year: y, spend, covered, need, fiNum, bal, working, rmd, taxes, ok: bal >= fiNum });
+        out.push({ age: a, year: y, spend, covered, need, fiNum, bal, working, rmd, taxes, preDraw, ok: bal >= fiNum });
         pre = pre * (1 + r) + (working ? add('retire') * 12 : 0);
         roth = roth * (1 + r) + (working ? add('roth') * 12 : 0);
         txb = txb * (1 + r) + (working ? add('taxable') * 12 : 0);
