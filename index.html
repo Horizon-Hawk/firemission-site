@@ -416,19 +416,24 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   function renderFiles() {
     const el = $('accts'), panel = el.closest('.sources');
-    const needsHelp = S.files.some(f => f.result.needsMapping || (f.result.warnings && f.result.warnings.length));
+    // only a CSV whose columns need matching keeps the list open; unreadable files are counted in the summary instead
+    const needsHelp = S.files.some(f => f.result.needsMapping);
+    const unread = S.files.filter(f => f.result.kind === 'unsupported').length;
     const fold = !S.sample && S.files.length > 0 && !S.showFiles && !needsHelp;
     panel.classList.toggle('collapsed', fold);
     if (S.result) {
       const A = S.result.accounts, by = k => A.filter(a => a.type === k).length;
-      const parts = [['bank', 'bank'], ['card', 'card'], ['invest', 'investment']].map(([k, l]) => by(k) ? `${by(k)} ${l}` : '').filter(Boolean).join(' · ');
+      const kindN = k => S.files.filter(f => f.result.kind === k).length;
+      const parts = [['bank', 'bank'], ['card', 'card'], ['invest', 'investment']].map(([k, l]) => by(k) ? `${by(k)} ${l}` : '')
+        .concat([kindN('paystub') ? kindN('paystub') + ' pay stub' + (kindN('paystub') > 1 ? 's' : '') : '', kindN('w2') ? kindN('w2') + ' W-2' + (kindN('w2') > 1 ? 's' : '') : '',
+          kindN('ssa') ? 'Social Security statement' : '', unread ? `<b class="out">${unread} couldn't be read</b>` : '']).filter(Boolean).join(' · ');
       $('srcsum').innerHTML = `<div style="min-width:0"><b>${S.files.length} file${S.files.length > 1 ? 's' : ''} loaded</b> · ${A.length} accounts<div class="meta">${parts} · ${S.result.start} to ${S.result.end}</div></div>
         <label class="dropzone" for="fileIn"><strong>Add more files</strong><small>drop here or click</small></label>
         <div class="acts"><button class="btn" id="showFiles" type="button">Show files</button><button class="linkbtn" id="clearAll2" type="button">Remove all</button></div>`;
     }
     if (!S.files.length) { el.innerHTML = '<div class="empty">No files yet. Drop your exports on the left.</div>'; return; }
     let h = S.sample ? '<p class="sample-note">This is a <b>made-up sample household</b> so you can see what the page does. Drop your own files and it disappears.</p>'
-      : S.showFiles && !needsHelp ? '<div style="display:flex;justify-content:flex-end"><button class="linkbtn" id="hideFiles" type="button">Fold this list</button></div>' : '';
+      : !needsHelp ? '<div style="display:flex;justify-content:flex-end"><button class="linkbtn" id="hideFiles" type="button">Fold this list</button></div>' : '';
     const order = { bank: 0, card: 1, invest: 2 };
     const accs = S.result ? S.result.accounts.slice().sort((a, b) => (order[a.type] - order[b.type]) || a.name.localeCompare(b.name)) : [];
     const stmtAccts = accs.filter(a => a.statements).map(a => a.name);
@@ -687,7 +692,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <p>What Social Security has on file as of ${esc(ssa.asOf || '')}. Benefits are based on your highest 35 years, so check that every year is right. Years marked "at the cap" earned more than the Social Security limit; only the limit counts.${T.ss ? ` Over your career you paid about <b>${usd0(T.ss)}</b> in Social Security tax and <b>${usd0(T.medicare || 0)}</b> in Medicare tax, and employers paid about the same again.` : ''}</p>
         <table><tr><th>Year</th><th class="r">Taxed for Social Security</th><th class="r">Taxed for Medicare</th><th></th></tr>${rows}</table></div>`;
     }
-    h += `<p class="estimate">Drop W-2s too when you have them; they give the exact year-end figures.</p>`;
+    if (!(R.w2s || []).length) h += `<p class="estimate">Drop W-2s too when you have them; they give the exact year-end figures.</p>`;
     return h;
   }
 
