@@ -277,6 +277,7 @@
     const p1 = String(pages[0] || ''), all = pages.join('\n');
     if (/NET PAY/i.test(all) && /(Advice|Pay|Check) Date/i.test(all) && /EARNINGS/i.test(all)) return parsePayStub(fileName, pages);
     if (/Your Social Security Statement/i.test(all.slice(0, 600))) return parseSSA(fileName, all);
+    if (/Wage and Tax/i.test(all) && /W-2/.test(all) && /Federal income tax withheld/i.test(all)) return parseW2(fileName, all);
     const per = p1.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:to|-|–|through)\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
     const acc = p1.match(/([A-Za-z][A-Za-z ]{1,30}?)\s*Account\s*(?:#|Number|No\.?)\s*:?\s*([*xX•\d-]{4,})/);
     if (!acc) return parsePlanStatement(fileName, pages);
@@ -358,6 +359,32 @@
       dependents: money(w4v(/Dependent Amount:\s*([\d,]+\.\d{2})/) || ''), multipleJobs: w4v(/(?:Multiple Jobs|Spouse Works):?\s*([YN])\b/) };
     return { kind: 'paystub', format: 'pay stub', fileName, employer: name, payDate: payDate || end, begin, end: end || payDate, w4,
       current, ytd: toDateV, taxes, before, after, employerPaid: employer, deposits, txns: [], warnings: [] };
+  }
+
+  /* Form W-2. Box labels are fixed by the IRS; payroll printouts put each pair of labels on one line and the two
+     amounts on the next (ADP), or the amount right after its label. Only the first (employee) copy is read; names,
+     addresses and SSNs are never kept. */
+  const W2CODES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y', 'Z', 'AA', 'BB', 'DD', 'EE', 'FF', 'GG', 'HH', 'II']);
+  function parseW2(fileName, all) {
+    const N = '([\\d,]+\\.\\d{2})';
+    const pair = (a, b) => { const m = all.match(new RegExp(a + '[^\\n]*?' + b + '[^\\n]*\\n\\s*' + N + '\\s+' + N, 'i')); return m ? [money(m[1]), money(m[2])] : null; };
+    const one = label => { const m = all.match(new RegExp(label + '[^\\d\\n]{0,40}' + N, 'i')); return m ? money(m[1]) : null; };
+    const b12 = pair('Wages, tips, other comp', 'Federal income tax withheld') || [one('Wages, tips, other comp'), one('Federal income tax withheld')];
+    const b34 = pair('Social security wages', 'Social security tax withheld') || [one('Social security wages'), one('Social security tax withheld')];
+    const b56 = pair('Medicare wages and tips', 'Medicare tax withheld') || [one('Medicare wages and tips'), one('Medicare tax withheld')];
+    if (b12[0] == null) return null;
+    const year = +((all.match(/W-2 Statement\s*(\d{4})/i) || all.match(/(\d{4})\s*W-2/) || all.match(/Form W-2[^\n]*?(\d{4})/) || [])[1] || 0) || null;
+    const emp = (all.match(/Employer.s name, address,? and ZIP code\s*\n\s*([^\n]+)/i) || [])[1];
+    // first copy only: everything before the first repeat of the box 1 label
+    const i1 = all.search(/1 Wages, tips, other comp/i), i2 = all.slice(i1 + 10).search(/1 Wages, tips, other comp/i);
+    const copy = i2 > 0 ? all.slice(0, i1 + 10 + i2) : all;
+    const box12 = [];
+    for (const m of copy.matchAll(/(?:^|\s)([A-Z]{1,2})\s+([\d,]+\.\d{2})(?=\s|$)/gm)) if (W2CODES.has(m[1]) && !box12.some(x => x.code === m[1])) box12.push({ code: m[1], amount: money(m[2]) });
+    const b14 = [...all.matchAll(/14 Other\s+([\d,]+\.\d{2})\s+([A-Z][A-Z &.\-]{1,30}?)(?=\s+12[a-d]|\s*\n|$)/g)].map(m => ({ label: m[2].trim(), amount: money(m[1]) })).filter((x, i, a) => a.findIndex(y => y.label === x.label) === i);
+    const state = all.match(/\b([A-Z]{2})\s+[\w-]{4,}\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})/);
+    return { kind: 'w2', format: 'W-2', fileName, year, employer: emp ? emp.trim().replace(/\s+(INC|LLC|CORP|CO)\.?$/i, '') : 'Employer',
+      wages: b12[0], fedWithheld: b12[1], ssWages: b34[0], ssTax: b34[1], medicareWages: b56[0], medicareTax: b56[1],
+      box12, box14: b14, retirementPlan: /Ret\. plan[^\n]*\n\s*X/i.test(copy), state: state ? { state: state[1], wages: money(state[2]), tax: money(state[3]) } : null, txns: [], warnings: [] };
   }
 
   /* Social Security Statement (ssa.gov): monthly benefit for each starting age 62-70, full retirement age, birth date,
@@ -907,7 +934,7 @@
       fees: all.filter(t => t.counts === 'spend' && t.category === 'Fees & interest').map(t => ({ date: t.date, desc: t.desc, amount: -t.amount, account: t.account })),
       refunds: all.filter(t => t.refund && t.counts === 'offset').map(t => ({ date: t.date, desc: t.desc, amount: t.amount, account: t.account })),
       transfers: transferMap(all),
-      copies, pay, ssa: files.map(f => f.result).filter(r => r && r.kind === 'ssa').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
+      copies, pay, w2s: files.map(f => f.result).filter(r => r && r.kind === 'w2').filter((w, i, a) => a.findIndex(x => x.year === w.year && x.employer === w.employer && x.wages === w.wages) === i).sort((a, b) => (b.year || 0) - (a.year || 0)), ssa: files.map(f => f.result).filter(r => r && r.kind === 'ssa').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
       duplicatesRemoved: dupes.map(d => ({ date: d.dropped.date, desc: d.dropped.desc, amount: d.dropped.amount, account: d.dropped.account, file: d.dropped.file, keptFrom: d.kept.file })),
       review,
     };
