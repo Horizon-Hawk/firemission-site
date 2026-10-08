@@ -168,7 +168,7 @@ details.how ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; m
 .srcsum .acts { display: flex; gap: 8px; }
 
 /* pages */
-body[data-page="spend"] .pg-invest, body[data-page="invest"] .pg-spend { display: none !important; }
+body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-invest, body:not([data-page="taxes"]) .pg-taxes { display: none !important; }
 .pages { display: flex; gap: 0; border-bottom: 2px solid var(--ink); }
 .pages a { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; text-decoration: none; color: var(--muted); padding: 6px 16px 8px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--r) var(--r) 0 0; }
 .pages a[aria-current="page"] { color: var(--ink); background: var(--surface); border-color: var(--rule); box-shadow: 0 2px 0 var(--surface); }
@@ -206,6 +206,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <h1>FIRE <b>Mission</b></h1>
       <span class="expand"><b>F</b>inancial <b>I</b>ndependence, <b>R</b>etire <b>E</b>arly</span>
       <p class="pg-spend">Drop in the exports from your bank, credit cards and investment accounts. See what comes in, where it goes and what you keep, with transfers between your own accounts taken out so nothing counts twice.</p>
+      <p class="pg-taxes">What was taxed and withheld, how your savings are taxed, and the earnings Social Security has on record. Built from pay stubs, W-2s and your Social Security statement.</p>
       <p class="pg-invest">What your investments are worth, what it takes to stop working, and when you could. Built from your own statements, or numbers you type in.</p>
     </div>
     <span class="privacy">Your files never leave this page</span>
@@ -214,6 +215,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   <nav class="pages" aria-label="Pages">
     <a href="#spending" data-page="spend">Spending</a>
     <a href="#invest" data-page="invest">Investments &amp; FIRE</a>
+    <a href="#taxes" data-page="taxes">Taxes</a>
   </nav>
 
   <section class="panel sources" aria-label="Your files">
@@ -235,6 +237,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   </section>
 
   <section class="pg-invest invest-page" id="investPage" aria-label="Investments and FIRE"></section>
+  <section class="pg-taxes invest-page" id="taxesPage" aria-label="Taxes"></section>
 
   <section class="panel pg-spend" id="board" aria-label="Summary"></section>
   <section class="panel ask pg-spend" id="ask" aria-label="Questions" hidden></section>
@@ -409,7 +412,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   // ---------- rendering ----------
-  function render() { renderFiles(); renderBoard(); renderAsk(); renderTabs(); renderInvest(); }
+  function render() { renderFiles(); renderBoard(); renderAsk(); renderTabs(); renderInvest(); renderTaxes(); }
 
   function renderFiles() {
     const el = $('accts'), panel = el.closest('.sources');
@@ -508,7 +511,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     el.innerHTML = h;
   }
 
-  const TABS = [['months', 'By month'], ['categories', 'Where it goes'], ['income', 'Income'], ['pay', 'Pay'], ['taxes', 'Taxes'], ['recurring', 'Recurring'], ['transfers', 'Transfers'], ['flags', 'Check these'], ['txns', 'All transactions']];
+  const TABS = [['months', 'By month'], ['categories', 'Where it goes'], ['income', 'Income'], ['pay', 'Pay'], ['recurring', 'Recurring'], ['transfers', 'Transfers'], ['flags', 'Check these'], ['txns', 'All transactions']];
 
   function renderTabs() {
     const R = S.result;
@@ -517,7 +520,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     $('tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === 'flags' && flagN ? `<span class="count">${flagN}</span>` : ''}${k === 'recurring' && recUp ? `<span class="count">${recUp} up</span>` : ''}</button>`).join('');
     const b = $('tabbody');
     if (!R) { b.innerHTML = ''; return; }
-    b.innerHTML = ({ months: tabMonths, categories: tabCats, income: tabIncome, pay: tabPay, taxes: tabTaxes, recurring: tabRecurring, transfers: tabTransfers, flags: tabFlags, txns: tabTxns })[S.tab](R);
+    b.innerHTML = ({ months: tabMonths, categories: tabCats, income: tabIncome, pay: tabPay, recurring: tabRecurring, transfers: tabTransfers, flags: tabFlags, txns: tabTxns })[S.tab](R);
   }
 
   function tabMonths(R) {
@@ -600,6 +603,30 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   // what was taxed and withheld, from pay stubs (later W-2s) and the Social Security statement. Facts, not tax advice.
+  function renderTaxes() {
+    const el = $('taxesPage');
+    if (document.body.dataset.page !== 'taxes') return;
+    const R = S.result;
+    if (!R || (!(R.pay || []).length && !R.ssa)) { el.innerHTML = '<div class="panel"><div class="empty">Drop pay stubs, W-2s or your Social Security statement (from ssa.gov) above to see taxes withheld, how your savings are taxed, and your earnings record.</div></div>'; return; }
+    const pays = R.pay || [];
+    const sum = f => pays.reduce((x, p) => x + f(p), 0);
+    const taxOf = (p, re) => p.lines.taxes.filter(l => re.test(l.name)).reduce((x, l) => x + l.ytd, 0);
+    const fed = sum(p => taxOf(p, /fed(eral)?\s*withh|\bFIT\b/i)), all = sum(p => (p.ytd || {}).taxes || 0), gross = sum(p => (p.ytd || {}).gross || 0);
+    const pace = sum(p => ((p.ytd || {}).taxes || 0) * p.scale) - sum(p => Math.max(0, taxOf(p, /OASDI|soc(ial)? sec/i) * p.scale - Math.max(taxOf(p, /OASDI|soc(ial)? sec/i), 11439)));
+    const thru = pays.map(p => p.ytdThrough).sort().pop();
+    const T = (R.ssa && R.ssa.taxesPaid) || {};
+    let h = `<div class="panel"><div class="fire-head">
+      <div><span class="label">Federal income tax withheld</span><span class="big">${pays.length ? usd0(fed) : '—'}</span>
+        <span class="sub">${pays.length ? `this year through ${thru}` : 'add pay stubs or W-2s'}</span></div>
+      <div><span class="label">All taxes from pay</span><span class="big">${pays.length ? usd0(all) : '—'}</span>
+        <span class="sub">${pays.length ? `${gross ? Math.round(all / gross * 100) + '% of gross pay · ' : ''}on pace for ${usd0(pace)} this year` : ''}</span></div>
+      <div><span class="label">Social Security tax, career</span><span class="big">${T.ss ? usd0(T.ss) : '—'}</span>
+        <span class="sub">${T.ss ? `plus ${usd0(T.medicare || 0)} Medicare; employers paid about the same` : 'add your Social Security statement'}</span></div>
+    </div></div>
+    <p class="estimate">Facts from your documents, not tax advice. Your return settles what you actually owe.</p>`;
+    el.innerHTML = h + tabTaxes(R);
+  }
+
   function tabTaxes(R) {
     const pays = R.pay || [], ssa = R.ssa;
     if (!pays.length && !ssa) return '<div class="empty">Drop pay stubs, W-2s or your Social Security statement (ssa.gov) to see taxes withheld, how your savings are taxed, and your earnings record.</div>';
@@ -634,7 +661,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <p>What Social Security has on file as of ${esc(ssa.asOf || '')}. Benefits are based on your highest 35 years, so check that every year is right. Years marked "at the cap" earned more than the Social Security limit; only the limit counts.${T.ss ? ` Over your career you paid about <b>${usd0(T.ss)}</b> in Social Security tax and <b>${usd0(T.medicare || 0)}</b> in Medicare tax, and employers paid about the same again.` : ''}</p>
         <table><tr><th>Year</th><th class="r">Taxed for Social Security</th><th class="r">Taxed for Medicare</th><th></th></tr>${rows}</table></div>`;
     }
-    h += `<p class="estimate">Drop W-2s here too when you have them; they give the exact year-end figures. Not tax advice.</p>`;
+    h += `<p class="estimate">Drop W-2s too when you have them; they give the exact year-end figures.</p>`;
     return h;
   }
 
@@ -994,10 +1021,10 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   function setPage() {
-    const p = location.hash === '#invest' ? 'invest' : 'spend';
+    const p = location.hash === '#invest' ? 'invest' : location.hash === '#taxes' ? 'taxes' : 'spend';
     document.body.dataset.page = p;
     document.querySelectorAll('.pages a').forEach(a => a.setAttribute('aria-current', a.dataset.page === p ? 'page' : 'false'));
-    renderInvest();
+    renderInvest(); renderTaxes();
   }
   window.addEventListener('hashchange', setPage);
   document.addEventListener('change', ev => {
