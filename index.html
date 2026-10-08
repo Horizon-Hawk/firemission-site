@@ -1689,6 +1689,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       // a 401(k) match from a civilian employer; in uniform, the Thrift Savings Plan matches up to 5% of base pay
       const matchPct = P.matchPct != null ? num(P.matchPct) : P.match === false ? 0 : 4;
       const match = serving ? 0.05 * 0.65 * gross : !school && gross > 0 ? gross * matchPct / 100 : 0;
+      // a detour's yearly cost comes out of what would have been saved first (otherwise it would only replace other
+      // spending and never show), then out of what's left, then onto a card
+      const fromSave = Math.min(save, detourCost); save -= fromSave;
       let spare = net - living - detourCost - lp - save;
       if (spare < 0) { const cut = Math.min(save, -spare); save -= cut; spare += cut; }
       if (spare < -1 && !school) { if (shortAt == null) shortAt = a; shortBy = Math.max(shortBy, -spare / 12); }
@@ -1820,7 +1823,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     h += `<div class="card chart"><h3>What you own minus what you owe, by age</h3>
       <div class="legend" style="flex-wrap:wrap"><span><i style="background:var(--in)"></i>${sp.compare ? 'First path' : 'Your path'}</span><span><i style="background:var(--in);opacity:.25"></i>Range: lower pay and 3% returns to higher pay and 7%</span>${Aclean ? '<span><i style="background:var(--muted)"></i>Same path without the detours</span>' : ''}${Bp ? '<span><i style="background:var(--accent)"></i>Second path</span>' : ''}</div>
       ${startChart(series, [A.fiAge != null ? { age: A.fiAge, v: at(A, A.fiAge), color: 'var(--in)' } : null, Bp && Bp.fiAge != null ? { age: Bp.fiAge, v: at(Bp, Bp.fiAge), color: 'var(--accent)' } : null].filter(Boolean), { lo: Alo.rows, hi: Ahi.rows })}
-      <p class="muted" style="margin:6px 0 0;font-size:13px">The line is median pay with 5% returns after inflation; the shaded range runs from pay at about the 25th percentile with 3% returns to the 75th percentile with 7%. Savings, retirement accounts and home equity, less student loans and credit card debt. A dot marks when investments could cover your costs.${Aclean ? ` The detours cost about <b>${usd0(at(Aclean, 65) - at(A, 65))}</b> by 65.` : ''}</p></div>`;
+      <p class="muted" style="margin:6px 0 0;font-size:13px">The line is median pay with 5% returns after inflation; the shaded range runs from pay at about the 25th percentile with 3% returns to the 75th percentile with 7%. Savings, retirement accounts and home equity, less student loans and credit card debt. A dot marks when investments could cover your costs. Lower pay can show an earlier stop age (spending is lower too, and Social Security covers more of it); the dollars are what shrink.${Aclean ? ` The detours cost about <b>${usd0(at(Aclean, 65) - at(A, 65))}</b> by 65.` : ''}</p></div>`;
 
     // saving more: the same path with more invested each month once working
     {
