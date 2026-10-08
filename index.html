@@ -1579,7 +1579,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     ['divorce', 'Divorce', 15000, 0, 0, 1, 'lawyers and court, often $15,000 or more, and savings split in half'],
   ];
   const AREA = { low: { rent: 1000, home: 250000, pay: 0.9, label: 'Lower-cost area' }, avg: { rent: 1450, home: 400000, pay: 1, label: 'Average area' }, high: { rent: 2300, home: 750000, pay: 1.2, label: 'Higher-cost area' } };
-  const startDefaults = () => ({ age: 18, saved: 0, giftMo: '', giftUntil: '', job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, matchPct: '4', milYears: 4, second: '', gi: true, va: 0, det: {} });
+  const startDefaults = () => ({ age: 18, saved: 0, giftMo: '', giftUntil: '', job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, atHome: true, atHomeUntil: '22', atHomePay: '0', carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, matchPct: '4', milYears: 4, second: '', gi: true, va: 0, det: {} });
   const SP = () => { const p = S.start = Object.assign({ cur: 'A', compare: false }, S.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
 
   // income tax, today's dollars: 2026 federal brackets (single, or joint once married on one income), Social Security
@@ -1647,6 +1647,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       // a spouse's pay counts from the wedding (until a divorce), rising about 25% over 20 years; taxes are then joint
       const spouse = married ? num(P.spousePay) * (1 + 0.25 * Math.min(1, (a - wedAt) / 20)) : 0;
       earnings.push(gross); if (spouse) spouseEarn.push(spouse);
+      const atHomeNow0 = P.atHome && a < (num(P.atHomeUntil) || 22) && !married && !(school1 && route[4]);
       // saving: the share of take-home you set, plus any extra a month once working. Up to the 401(k) limit it goes in
       // before tax, and the tax that saves stays invested
       const G = gross + spouse + pension, net0 = G ? takeHome(G, married, serving) : 0;
@@ -1654,6 +1655,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       const pretax = !serving && gross > 0 ? Math.min(save, 24500) : 0;
       const taxSaved = pretax ? takeHome(G - pretax, married, false) + pretax - net0 : 0;
       save += taxSaved;
+      const homeSaved = atHomeNow0 ? Math.max(0, area.rent * (a < num(P.roomTill) ? 0.6 : 1) - num(P.atHomePay)) * 12 : 0;
+      save += homeSaved;
       // child tax credit: about $2,200 a year for each child under 17
       let under17 = 0; for (let i = 0; i < num(P.kids); i++) { const born = (num(P.kidAge) || 30) + i * 2; if (a >= born && a < born + 17) under17++; }
       const ctc = under17 * 2200;
@@ -1669,12 +1672,15 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       const buyAt = P.buy !== false ? num(P.home) : 0;
       if (buyAt && !homePrice && a >= buyAt && inv >= area.home * 0.1 && area.home * 0.0075 * 12 <= household * 0.3) { homePrice = area.home; inv -= homePrice * 0.1; homeBal = homePrice * 0.9; boughtAt = a; }
       let housing;
+      const atHomeNow = P.atHome && a < (num(P.atHomeUntil) || 22) && !married && !kidsNow && !(school1 && away);
       if (homePrice) housing = homePrice * (a - boughtAt < 30 ? 0.0075 : 0.0015) * 12 + homePrice * 0.01; // after 30 years only tax and insurance; upkeep about 1% a year
+      else if (atHomeNow) housing = num(P.atHomePay) * 12;
       else housing = area.rent * (a < num(P.roomTill) && !married && !kidsNow ? 0.6 : 1) * 12;
-      if (school1) housing = 0;              // at home or in a dorm (room and board are in the school cost)
+      if (school1 && away) housing = 0;      // in a dorm: room and board are in the school cost
       // a car: the payment and insurance typed in, plus about $200 a month for gas and upkeep; no car = about $120 of transit
       const carMo = num(P.carPay) + num(P.carIns), car = (carMo ? carMo + 200 : 120) * 12;
-      const living = school1 ? (away ? 300 * 12 : 300 * 12 + car) : housing + car + (400 + 230 + 350) * 12 + kidsNow * 1500 * 12 + (married ? 600 * 12 : 0);
+      // at home, parents carry part of food and utilities
+      const living = school1 && away ? 300 * 12 : housing + car + (atHomeNow ? 500 : 400 + 230 + 350) * 12 + kidsNow * 1500 * 12 + (married ? 600 * 12 : 0);
       const supFrom = det.support ? num(det.support.age) || 22 : null;
       const detourCost = recurring.filter(([f, t]) => a >= f && a < t).reduce((x, [, , y]) => x + y, 0) + (supFrom != null && a >= supFrom && a < supFrom + 18 ? 0.2 * gross : 0);
       // paying the student loan back over 10 years
@@ -1785,10 +1791,12 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
           + chk('gi', P.gi !== false, 'Use the GI Bill for the second career'),
           `Service ends at ${S0.svcEnd}.${S0.pensionYr ? ` Pension from then on: about <b>${usd0(S0.pensionYr / 12)}</b> a month (2% of base pay for each year served).` : ' No pension before 20 years; the Thrift Savings Plan match (up to 5% of base pay) goes with you.'}${S0.vaYr ? ` VA disability: ${usd0(S0.vaYr / 12)} a month, tax-free.` : ''} ${S0.job2 ? `${esc(S0.job2[0])}${S0.route2[1] ? ` after ${esc(S0.route2[0].toLowerCase())}${S0.gi ? ', tuition and about $2,000 a month for housing paid by the GI Bill' : ''}` : ''}, starting at ${S0.career2At}.` : `A civilian job in similar work from ${S0.svcEnd}, at about 85% of military pay.`}`);
         const pmt = Math.round((num(P.homePrice) || 400000) * 0.0075);
-        out += grp('Housing', f('Rent a month', inp('rent', P.rent, '1450'), 'm') + f('Roommates until age', inp('roomTill', P.roomTill, 'none'), 'n')
+        out += grp('Housing', chk('atHome', P.atHome, 'Live with parents')
+          + (P.atHome ? f('Until age', inp('atHomeUntil', P.atHomeUntil, '22'), 'n') + f('Pay them a month', inp('atHomePay', P.atHomePay, '0'), 'm') : '')
+          + f('Rent a month', inp('rent', P.rent, '1450'), 'm') + f('Roommates until age', inp('roomTill', P.roomTill, 'none'), 'n')
           + chk('buy', P.buy !== false, 'Buy a home')
           + (P.buy !== false ? f('At age', inp('home', P.home, '32'), 'n') + f('Home price', inp('homePrice', P.homePrice, '400000'), 'm') : ''),
-          P.buy !== false ? `About ${usd0(pmt)} a month with 10% down (mortgage, property tax and insurance). ${S0.boughtAt ? `Bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ', the earliest the down payment was saved and the payment fit 30% of household pay' : ''}.` : 'It never fit: 10% down saved and a payment under 30% of household pay.'}` : 'Renting the whole way; roommates split the rent until the age you set.');
+          (P.atHome ? `At home until ${num(P.atHomeUntil) || 22}${num(P.atHomePay) ? `, paying ${usd0(num(P.atHomePay))} a month` : ', rent-free'}, with the rent you'd otherwise pay invested; then rent. ` : 'Renting from the start (a dorm while away at school). ') + (P.buy !== false ? `About ${usd0(pmt)} a month with 10% down (mortgage, property tax and insurance). ${S0.boughtAt ? `Bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ', the earliest the down payment was saved and the payment fit 30% of household pay' : ''}.` : 'It never fit: 10% down saved and a payment under 30% of household pay.'}` : 'Renting the whole way; roommates split the rent until the age you set.'));
         out += grp('Car', f('Car payment a month', inp('carPay', P.carPay, '0'), 'm') + f('Insurance a month', inp('carIns', P.carIns, '150'), 'm'),
           num(P.carPay) + num(P.carIns) ? 'Plus about $200 a month for gas and upkeep. A used car paid off: payment 0.' : 'No car: about $120 a month for transit.');
         out += grp('Family', chk('marry', P.marry !== false, 'Get married')
