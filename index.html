@@ -299,9 +299,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   <div class="stick" id="stick">
     <nav class="pages" aria-label="Pages">
       <a href="#spending" data-page="spend">Spending</a>
+      <a href="#budget" data-page="budget">Budget</a>
       <a href="#invest" data-page="invest"><span class="long">Investments &amp; </span>FIRE</a>
       <a href="#taxes" data-page="taxes"><span class="long">Pay &amp; </span>Taxes</a>
-      <a href="#budget" data-page="budget">Budget</a>
     </nav>
     <label class="minidrop" id="minidrop" for="fileIn" title="Add statements: click, or drop files anywhere on the page">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -1387,6 +1387,24 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <tr class="tot"><td>A normal month, left over</td><td class="r num">${usd0(left)}</td></tr></table></details>
       ${payroll >= 1 ? `<p style="margin:10px 0 0">Not in these numbers: about <b>${usd0(payroll)}</b> a month invested straight from your pay (retirement, match, stock plan)${bankSave >= 1 ? ` and ${usd0(bankSave)} a month moved from the bank to savings or investments` : ''}. That money is saved before or after the budget, never spent.</p>` : ''}</div>`;
 
+    // what the money left over would do for FIRE: the FIRE projection rerun with part or all of it invested each month
+    const spare = Math.max(0, left > 0 ? left : before);
+    if (spare >= 50 && m.age0 != null) {
+      const fv = F(), keep = fv.typed, budAcct = keep.find(a => a.id === 'budget');
+      const whatIf = amt => { F().typed = keep.filter(a => a.id !== 'budget').concat(amt ? [{ id: 'wi', name: 'what-if', kind: 'taxable', balance: '0', monthly: String(amt) }] : []);
+        try { const v = fireModel(); return { fi: v.fiAge, atStop: (v.rows.find(r => r.age === v.ra) || {}).bal || 0, end: (v.rows[v.rows.length - 1] || {}).bal || 0, out: v.outAge }; } finally { S.prefs.fire.typed = keep; } };
+      const r50 = x => Math.round(x / 50) * 50;
+      const amts = [...new Set([0, r50(spare / 4), r50(spare / 2), r50(spare)])].filter((a, i) => i === 0 || a >= 50);
+      const res = amts.map(a => Object.assign({ a }, whatIf(a)));
+      const ra = num(fv.retireAge) || 60;
+      h += `<div class="card tablewrap bud"><h3>What it could do for FIRE</h3>
+        <p>The FIRE projection rerun with some of the ${usd0(spare)} a month you have left${left > 0 ? '' : ' before one-time costs'} invested each month (taxable investing, at the FIRE page's return). ${budAcct ? `You've added <b>${usd0(num(budAcct.monthly))}</b> a month on the FIRE page.` : ''}</p>
+        <table><tr><th>Invest each month</th><th class="r">Earliest stop age</th><th class="r">At ${ra}</th><th class="r">At 95</th><th></th></tr>
+        ${res.map(r => `<tr${budAcct && Math.round(num(budAcct.monthly)) === r.a ? ' class="tot"' : ''}><td>${r.a ? usd0(r.a) : 'Nothing extra'}${r.a ? `<div class="note">${({ 1: 'a quarter of', 2: 'half of', 4: 'all of' })[Math.round(r.a / spare * 4)] || 'part of'} what's left</div>` : ''}</td><td class="r num">${r.fi != null ? r.fi : '—'}</td><td class="r num">${usd0(r.atStop)}</td><td class="r num">${r.out ? `<span class="out">runs out at ${r.out}</span>` : usd0(r.end)}</td>
+          <td class="r">${r.a ? `<button type="button" class="linkbtn" data-addfire="${r.a}">Use on FIRE page</button>` : budAcct ? `<button type="button" class="linkbtn" data-addfire="0">Remove</button>` : ''}</td></tr>`).join('')}</table>
+        <p class="muted" style="margin:8px 0 0;font-size:13px">A Roth IRA instead of taxable investing comes out a little ahead (tax-free withdrawals) if your income is under the limit. Money kept in cash for repairs, a vacancy or paying down a loan isn't in this table. Model results, not financial advice.</p></div>`;
+    }
+
     // income
     h += `<div class="card tablewrap bud"><h3>Money in</h3><p>Take-home deposits. If something stopped for a while (an empty rental, time between jobs), type what it usually brings in. The FIRE page uses the same amount.</p><table>
       <tr><th>Source</th><th class="r">Average / mo</th><th class="r">Usual / mo</th></tr>
@@ -1628,6 +1646,10 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     savePrefs(); renderInvest();
   });
   document.addEventListener('click', ev => {
+    const af = ev.target.closest('[data-addfire]');
+    if (af) { const fv = F(), amt = af.dataset.addfire; fv.typed = fv.typed.filter(a => a.id !== 'budget');
+      if (+amt) fv.typed.push({ id: 'budget', name: 'Invested from budget', kind: 'taxable', balance: '0', monthly: amt });
+      savePrefs(); if (+amt) location.hash = '#invest'; else renderBudget(); return; }
     const bo = ev.target.closest('[data-bopen]');
     if (bo) { const o = S.budOpen || (S.budOpen = new Set()), k = bo.dataset.bopen; if (o.has(k)) o.delete(k); else o.add(k); renderBudget(); return; }
     const uu = ev.target.closest('[data-useusual]');
