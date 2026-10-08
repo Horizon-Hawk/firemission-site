@@ -62,6 +62,22 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .brand p { margin: 6px 0 0; color: var(--muted); max-width: 64ch; }
 .privacy { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--in); border: 1px solid currentColor; border-radius: 999px; padding: 4px 12px; }
 .disclaim { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.trust { --tb: color-mix(in srgb, var(--in) 38%, var(--rule)); }
+.trust details { background: var(--in-soft); border: 1px solid var(--tb); border-radius: var(--r); padding: 14px 18px; }
+.trust summary { display: flex; align-items: center; gap: 14px; cursor: pointer; list-style: none; }
+.trust summary::-webkit-details-marker { display: none; }
+.trust .shield { width: 34px; height: 34px; flex: none; color: var(--in); }
+.trust .t-head { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.trust .t-head b { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-size: 21px; letter-spacing: .02em; color: var(--in); line-height: 1.15; }
+.trust .t-sub { color: var(--ink); font-size: 14px; }
+.trust .t-more { flex: none; font-size: 13px; color: var(--in); text-decoration: underline; text-underline-offset: 3px; }
+.trust details[open] .t-more { display: none; }
+.trust .t-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 22px; margin-top: 14px; }
+.trust h4 { margin: 0 0 4px; font-size: 14px; color: var(--in); }
+.trust .t-grid p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.trust .t-fine { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+.trust a { color: var(--in); }
+@media (max-width: 560px) { .trust .t-more { display: none; } .trust .t-head b { font-size: 19px; } }
 .privacy::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r); }
@@ -215,7 +231,6 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <p class="pg-taxes">What was taxed and withheld, how your savings are taxed, and the earnings Social Security has on record. Built from pay stubs, W-2s and your Social Security statement.</p>
       <p class="pg-invest">What your investments are worth, what it takes to stop working, and when you could. Built from your own statements, or numbers you type in.</p>
     </div>
-    <span class="privacy">Your files never leave this page</span>
     <span class="disclaim">Free tools, not financial, tax or investment advice</span>
   </header>
   <nav class="pages" aria-label="Pages">
@@ -223,6 +238,18 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     <a href="#invest" data-page="invest">Investments &amp; FIRE</a>
     <a href="#taxes" data-page="taxes">Taxes</a>
   </nav>
+
+  <section class="trust" id="trust" aria-label="How your privacy works">
+    <details id="trustBox" open>
+      <summary><svg class="shield" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4 5.6v6.1c0 4.9 3.3 8.7 8 9.8 4.7-1.1 8-4.9 8-9.8V5.6L12 2.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m8.4 12.2 2.5 2.5 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="t-head"><b>Your files never leave your computer</b><span class="t-sub">They're read by this page, on your device. Nothing is uploaded and nothing is stored.</span></span><span class="t-more">How this works</span></summary>
+      <div class="t-grid">
+        <div><h4>Read here, not uploaded</h4><p>When you drop a statement, the code in this page opens it right in your browser, the same way a PDF viewer does. There's no account, no sign-in and no server that receives files: this site is only the page itself.</p></div>
+        <div><h4>Gone when you close the tab</h4><p>Your transactions and statements aren't saved anywhere. The only thing kept is your answers (who a payer is, the settings you typed) in this browser, so you don't repeat them next month. <button class="linkbtn" id="forgetAnswers" type="button">Forget my answers</button></p></div>
+        <div><h4>Check it yourself</h4><p>Once the page has loaded, turn off Wi-Fi and drop your files: it still works, because nothing goes out. Or open your browser's developer tools, choose <b>Network</b>, and watch while you add a file. The code is public on <a href="https://github.com/Horizon-Hawk/firemission-site" target="_blank" rel="noopener">GitHub</a>.</p></div>
+      </div>
+      <p class="t-fine">When the page opens it downloads its fonts (Google Fonts) and its PDF reader (cdnjs), like any website loading its parts. Those downloads never include your files or numbers.</p>
+    </details>
+  </section>
 
   <section class="panel sources" aria-label="Your files">
     <div class="drop">
@@ -435,6 +462,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   function renderFiles() {
     const el = $('accts'), panel = el.closest('.sources');
+    if (!S.trustTouched) $('trustBox').open = S.sample || !S.files.length;
     // only a CSV whose columns need matching keeps the list open; unreadable files are counted in the summary instead
     const needsHelp = S.files.some(f => f.result.needsMapping);
     const unread = S.files.filter(f => f.result.kind === 'unsupported').length;
@@ -931,6 +959,17 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   });
   let qTimer;
   document.addEventListener('input', ev => { if (ev.target.id === 'q') { clearTimeout(qTimer); const pos = ev.target.selectionStart; S.q = ev.target.value; qTimer = setTimeout(() => { renderTabs(); const q = $('q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } }, 200); } });
+  $('trustBox').addEventListener('toggle', () => { S.trustTouched = true; });
+  let forgetArmed = 0;
+  $('forgetAnswers').addEventListener('click', ev => {
+    ev.preventDefault();
+    const b = ev.currentTarget;
+    if (Date.now() - forgetArmed > 4000) { forgetArmed = Date.now(); b.textContent = 'Click again to forget them'; setTimeout(() => { b.textContent = 'Forget my answers'; }, 4000); return; }
+    try { localStorage.removeItem('fm-prefs'); } catch (e) { /* nothing stored */ }
+    S.prefs = blankPrefs(); forgetArmed = 0; b.textContent = 'Forget my answers';
+    if (S.sample) loadSample(); else rerun();
+    toast('Answers forgotten in this browser');
+  });
   document.addEventListener('click', ev => {
     const t = ev.target.closest('[data-tab],[data-flip],[data-apply],[data-gocat],[data-drop],[data-dropmany]');
     if (!t) return;
@@ -1242,6 +1281,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   });
   setPage();
   loadSample();
+  setTimeout(() => { loadPdfJs().catch(() => {}); }, 1500);
 })();
 </script>
 
