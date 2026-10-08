@@ -191,7 +191,29 @@ details.how ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; m
 
 /* pages */
 body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-invest, body:not([data-page="taxes"]) .pg-taxes { display: none !important; }
-.pages { display: flex; gap: 0; border-bottom: 2px solid var(--ink); }
+.stick { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
+  background: var(--bg); border-bottom: 2px solid var(--ink); padding-top: 6px; margin-top: -6px; }
+.stick.stuck { box-shadow: 0 6px 12px -8px color-mix(in srgb, var(--ink) 45%, transparent); }
+#stickSentinel { height: 0; }
+.pages { display: flex; gap: 0; min-width: 0; }
+.minidrop { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 5px 12px 5px 8px; border: 1.5px dashed var(--rule-strong); border-radius: 8px;
+  background: var(--surface); color: var(--ink); cursor: pointer; flex: none; }
+.minidrop:hover, .minidrop.over { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+.minidrop svg { width: 20px; height: 20px; color: var(--accent); flex: none; }
+.minidrop span { display: grid; line-height: 1.15; }
+.minidrop b { font-size: 14px; }
+.minidrop small { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+@media (max-width: 640px) {
+  .pages a { font-size: 17px; padding: 6px 10px 8px; }
+  .pages .long { display: none; }
+  .minidrop { padding: 5px 8px; }
+  .minidrop small { display: none; }
+}
+@media (max-width: 440px) {
+  .pages a { padding: 6px 9px 8px; }
+  .minidrop { padding: 6px; }
+  .minidrop span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
 .pages a { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; text-decoration: none; color: var(--muted); padding: 6px 16px 8px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--r) var(--r) 0 0; }
 .pages a[aria-current="page"] { color: var(--ink); background: var(--surface); border-color: var(--rule); box-shadow: 0 2px 0 var(--surface); }
 
@@ -233,11 +255,18 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     </div>
     <span class="disclaim">Free tools, not financial, tax or investment advice</span>
   </header>
-  <nav class="pages" aria-label="Pages">
-    <a href="#spending" data-page="spend">Spending</a>
-    <a href="#invest" data-page="invest">Investments &amp; FIRE</a>
-    <a href="#taxes" data-page="taxes">Taxes</a>
-  </nav>
+  <div class="stick" id="stick">
+    <nav class="pages" aria-label="Pages">
+      <a href="#spending" data-page="spend">Spending</a>
+      <a href="#invest" data-page="invest"><span class="long">Investments &amp; </span>FIRE</a>
+      <a href="#taxes" data-page="taxes">Taxes</a>
+    </nav>
+    <label class="minidrop" id="minidrop" for="fileIn" title="Add statements: click, or drop files anywhere on the page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span><b>Add files</b><small id="miniSum">or drop them anywhere</small></span>
+    </label>
+  </div>
+  <div id="stickSentinel" aria-hidden="true"></div>
 
   <section class="trust" id="trust" aria-label="How your privacy works">
     <details id="trustBox" open>
@@ -462,6 +491,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   function renderFiles() {
     const el = $('accts'), panel = el.closest('.sources');
+    $('miniSum').textContent = S.sample || !S.files.length ? 'or drop them anywhere' : `${S.files.length} loaded · drop more anywhere`;
     if (!S.trustTouched) $('trustBox').open = S.sample || !S.files.length;
     // only a CSV whose columns need matching keeps the list open; unreadable files are counted in the summary instead
     const needsHelp = S.files.some(f => f.result.needsMapping);
@@ -928,8 +958,10 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   // ---------- events ----------
   const dz = $('dz');
-  ['dragenter', 'dragover'].forEach(e => document.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('over'); dz.closest('.sources').classList.add('over'); }));
-  ['dragleave', 'drop'].forEach(e => document.addEventListener(e, ev => { ev.preventDefault(); if (e === 'drop' || !ev.relatedTarget) { dz.classList.remove('over'); dz.closest('.sources').classList.remove('over'); } }));
+  ['dragenter', 'dragover'].forEach(e => document.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('over'); dz.closest('.sources').classList.add('over'); $('minidrop').classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(e => document.addEventListener(e, ev => { ev.preventDefault(); if (e === 'drop' || !ev.relatedTarget) { dz.classList.remove('over'); dz.closest('.sources').classList.remove('over'); $('minidrop').classList.remove('over'); } }));
+  // shadow under the bar once it's stuck to the top
+  try { new IntersectionObserver(([e]) => $('stick').classList.toggle('stuck', !e.isIntersecting)).observe($('stickSentinel')); } catch (e) { /* older browsers: no shadow */ }
   document.addEventListener('drop', ev => { if (ev.dataTransfer && ev.dataTransfer.files.length) readFiles(ev.dataTransfer.files); });
   $('fileIn').addEventListener('change', ev => { readFiles(ev.target.files); ev.target.value = ''; });
   $('loadSample').addEventListener('click', loadSample);
@@ -1246,6 +1278,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const p = location.hash === '#invest' ? 'invest' : location.hash === '#taxes' ? 'taxes' : 'spend';
     document.body.dataset.page = p;
     document.querySelectorAll('.pages a').forEach(a => a.setAttribute('aria-current', a.dataset.page === p ? 'page' : 'false'));
+    const top = $('stickSentinel').getBoundingClientRect().top + window.scrollY - 8;
+    if (window.scrollY > top) window.scrollTo(0, top);
     renderInvest(); renderTaxes();
   }
   window.addEventListener('hashchange', setPage);
