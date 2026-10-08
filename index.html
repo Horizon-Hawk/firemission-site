@@ -226,6 +226,11 @@ body[data-page="start"] .sources, body[data-page="start"] #trust { display: none
 .det b { display: block; font-size: 14px; }
 .det .muted { display: block; font-size: 12px; line-height: 1.35; }
 .det input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); }
+.start-share { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 12px 0 0; }
+.start-share .btn { font: inherit; font-weight: 600; font-size: 14px; padding: 6px 12px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.start-share .btn:hover { border-color: var(--accent); }
+.start-share .muted { font-size: 13px; flex: 1 1 220px; }
+.start-share input[type=text] { flex: 1 1 260px; min-width: 0; font: 12px var(--mono); padding: 5px 8px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); color: var(--ink); }
 .milbox { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--rule-strong); }
 .milbox h4 { font-size: 15px; margin: 0 0 8px; }
 .detage { font-size: 13px; color: var(--muted); white-space: nowrap; }
@@ -414,7 +419,11 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   };
   const blankPrefs = () => ({ payers: {}, outs: {}, merchants: {}, txns: {}, accounts: {} });
   const S = { files: [], sample: false, prefs: Object.assign(blankPrefs(), store.get()), result: null, tab: 'months', q: '', cat: '', acct: '', counts: '' };
-  const savePrefs = () => { if (!S.sample) store.set(S.prefs); };
+  // the Starting Out choices are kept on their own (no statements involved), so the sample never resets them
+  try { S.start = JSON.parse(localStorage.getItem('fm-start') || 'null') || S.prefs.start || null; } catch (e) { S.start = S.prefs.start || null; }
+  delete S.prefs.start;
+  const saveStart = () => { try { localStorage.setItem('fm-start', JSON.stringify(S.start)); } catch (e) { /* private window */ } };
+  const savePrefs = () => { if (!S.sample) store.set(S.prefs); saveStart(); };
 
   // ---------- sample household (made up) ----------
   function sampleFiles() {
@@ -525,6 +534,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         r.onload = () => {
           try {
             const a = JSON.parse(String(r.result));
+            if (a && a.kind === 'fire-mission-scenario') { if (openScenario(a, 'the file')) location.hash = '#start'; done(); return; }
             if (!a || typeof a !== 'object' || !('payers' in a || 'outs' in a || 'fire' in a)) throw 0;
             if (S.sample) { S.files = []; S.sample = false; S.prefs = Object.assign(blankPrefs(), store.get()); }
             S.prefs = Object.assign(blankPrefs(), S.prefs, a); savePrefs(); toast('Answers loaded');
@@ -1097,8 +1107,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     ev.preventDefault();
     const b = ev.currentTarget;
     if (Date.now() - forgetArmed > 4000) { forgetArmed = Date.now(); b.textContent = 'Click again to forget them'; setTimeout(() => { b.textContent = 'Forget my answers'; }, 4000); return; }
-    try { localStorage.removeItem('fm-prefs'); } catch (e) { /* nothing stored */ }
-    S.prefs = blankPrefs(); forgetArmed = 0; b.textContent = 'Forget my answers';
+    try { localStorage.removeItem('fm-prefs'); localStorage.removeItem('fm-start'); } catch (e) { /* nothing stored */ }
+    S.prefs = blankPrefs(); S.start = null; forgetArmed = 0; b.textContent = 'Forget my answers';
     if (S.sample) loadSample(); else rerun();
     toast('Answers forgotten in this browser');
   });
@@ -1561,7 +1571,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   ];
   const AREA = { low: { rent: 1000, home: 250000, pay: 0.9, label: 'Lower-cost area' }, avg: { rent: 1450, home: 400000, pay: 1, label: 'Average area' }, high: { rent: 2300, home: 750000, pay: 1.2, label: 'Higher-cost area' } };
   const startDefaults = () => ({ age: 18, saved: 0, job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, milYears: 4, second: '', gi: true, va: 0, det: {} });
-  const SP = () => { const p = S.prefs.start = Object.assign({ cur: 'A', compare: false }, S.prefs.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
+  const SP = () => { const p = S.start = Object.assign({ cur: 'A', compare: false }, S.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
 
   // income tax, today's dollars: 2026 federal brackets (single, or joint once married on one income), Social Security
   // and Medicare, and about 4% for state and local
@@ -1661,6 +1671,21 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     return { rows, fiAge, loanFree, boughtAt, shortAt, shortBy, job, route, rk, careerAt, med, area, mil, svcYears, svcEnd, job2, route2, career2At, pensionYr, vaYr, gi };
   }
 
+  const scnEncode = st => btoa(unescape(encodeURIComponent(JSON.stringify(st)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const scnDecode = t => JSON.parse(decodeURIComponent(escape(atob(t.replace(/-/g, '+').replace(/_/g, '/')))));
+  function openScenario(st, how) {
+    if (!st || typeof st !== 'object' || !st.A) { toast('That is not a saved scenario'); return false; }
+    S.start = { cur: 'A', compare: !!(st.compare && st.B), A: st.A, B: st.B || null };
+    savePrefs(); toast('Scenario opened' + (how ? ' from ' + how : '')); setTimeout(() => toast(''), 2500); return true;
+  }
+  function scenarioFromHash() {
+    const m = location.hash.match(/^#start:([A-Za-z0-9_-]+)$/);
+    if (!m) return;
+    try { openScenario(scnDecode(m[1]), 'the link'); } catch (e) { toast('That link could not be read'); }
+    history.replaceState(null, '', location.pathname + location.search + '#start');
+  }
+  function scenarioData() { const sp = SP(); return { kind: 'fire-mission-scenario', v: 1, compare: sp.compare, A: sp.A, B: sp.compare ? sp.B : null }; }
+
   function startChart(series, marks) {
     const all = series.flatMap(s => s.rows), ages = series[0].rows.map(x => x.age), a0 = ages[0], a1 = ages[ages.length - 1];
     const maxV = Math.max(1, ...all.map(x => x.nw)), minV = Math.min(0, ...all.map(x => x.nw));
@@ -1694,6 +1719,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     </div></div>
     ${A.shortAt != null ? `<p class="estimate" style="background:var(--accent-soft);color:var(--ink)">${sp.compare ? 'The first path' : 'This path'} costs more than it brings in from age ${A.shortAt}, by up to ${usd0(A.shortBy)} a month; the gap goes on a credit card at 19%, until credit runs out. Try roommates longer, a used car, a cheaper area, fewer or later kids, or a later home.</p>` : ''}
     ${Bp && Bp.shortAt != null ? `<p class="estimate" style="background:var(--accent-soft);color:var(--ink)">The second path costs more than it brings in from age ${Bp.shortAt}, by up to ${usd0(Bp.shortBy)} a month.</p>` : ''}
+    <div class="start-share"><button type="button" class="btn" id="scnLink">Copy a share link</button><button type="button" class="btn" id="scnSave">Save as a file</button><button type="button" class="linkbtn" id="scnOpen">Open a saved scenario</button>
+      <input type="file" id="scnIn" accept=".json,application/json" hidden><span class="muted" id="scnMsg">Share these choices (not your statements) with a parent, a kid or a friend.</span></div>
     <p class="estimate">A sketch, not a forecast: today's dollars, U.S. median pay (BLS 2023-24) and rough national costs. Real lives vary a lot. Not financial advice.</p>`;
 
     // the path
@@ -1880,7 +1907,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   function setPage() {
-    const p = location.hash === '#invest' ? 'invest' : location.hash === '#taxes' ? 'taxes' : location.hash === '#budget' ? 'budget' : location.hash === '#start' ? 'start' : 'spend';
+    scenarioFromHash();
+    const p = location.hash === '#invest' ? 'invest' : location.hash === '#taxes' ? 'taxes' : location.hash === '#budget' ? 'budget' : location.hash.startsWith('#start') ? 'start' : 'spend';
     document.body.dataset.page = p;
     document.querySelectorAll('.pages a').forEach(a => a.setAttribute('aria-current', a.dataset.page === p ? 'page' : 'false'));
     const top = $('stickSentinel').getBoundingClientRect().top + window.scrollY - 8;
@@ -1893,6 +1921,12 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   document.addEventListener('change', ev => {
     const t = ev.target, d = t.dataset, f = F();
     if (t.closest('#taxesPage') && t.dataset.tx) { const tx = S.prefs.tax = S.prefs.tax || {}; if (t.value.trim() === '') delete tx[t.dataset.tx]; else tx[t.dataset.tx] = t.value.trim(); savePrefs(); renderTaxes(); return; }
+    if (t.id === 'scnIn') {
+      const fl = t.files && t.files[0]; if (!fl) return;
+      const r = new FileReader();
+      r.onload = () => { try { if (openScenario(JSON.parse(String(r.result)), 'the file')) renderStart(); } catch (e) { toast('That is not a saved scenario'); } };
+      r.readAsText(fl); t.value = ''; return;
+    }
     if (t.closest('#startPage')) {
       const sp = SP(), P = sp[sp.compare && sp.cur === 'B' ? 'B' : 'A'];
       if (d.stcompare != null) { sp.compare = t.checked; if (t.checked && !sp.B) sp.B = JSON.parse(JSON.stringify(sp.A)); sp.cur = t.checked ? 'B' : 'A'; }
@@ -1946,6 +1980,15 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     if (af) { const fv = F(), amt = af.dataset.addfire; fv.typed = fv.typed.filter(a => a.id !== 'budget');
       if (+amt) fv.typed.push({ id: 'budget', name: 'Invested from budget', kind: 'taxable', balance: '0', monthly: amt });
       savePrefs(); renderInvest(); return; }
+    if (ev.target.id === 'scnSave') { download('fire-mission-scenario.json', JSON.stringify(scenarioData(), null, 1), 'application/json'); return; }
+    if (ev.target.id === 'scnOpen') { $('scnIn').click(); return; }
+    if (ev.target.id === 'scnLink') {
+      const url = location.origin + location.pathname + '#start:' + scnEncode(scenarioData()), msg = $('scnMsg');
+      const show = () => { const i = document.createElement('input'); i.type = 'text'; i.value = url; i.readOnly = true; msg.replaceWith(i); i.id = 'scnMsg'; i.select(); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(() => { msg.textContent = 'Link copied. It carries only these choices, after the #, which browsers never send to the site.'; }, show);
+      else show();
+      return;
+    }
     const stc = ev.target.closest('[data-stcur]');
     if (stc) { SP().cur = stc.dataset.stcur; savePrefs(); renderStart(); return; }
     const bsm = ev.target.closest('[data-bsmall]');
