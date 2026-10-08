@@ -1579,7 +1579,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     ['divorce', 'Divorce', 15000, 0, 0, 1, 'lawyers and court, often $15,000 or more, and savings split in half'],
   ];
   const AREA = { low: { rent: 1000, home: 250000, pay: 0.9, label: 'Lower-cost area' }, avg: { rent: 1450, home: 400000, pay: 1, label: 'Average area' }, high: { rent: 2300, home: 750000, pay: 1.2, label: 'Higher-cost area' } };
-  const startDefaults = () => ({ age: 18, saved: 0, job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, matchPct: '4', milYears: 4, second: '', gi: true, va: 0, det: {} });
+  const startDefaults = () => ({ age: 18, saved: 0, giftMo: '', giftUntil: '', job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, matchPct: '4', milYears: 4, second: '', gi: true, va: 0, det: {} });
   const SP = () => { const p = S.start = Object.assign({ cur: 'A', compare: false }, S.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
 
   // income tax, today's dollars: 2026 federal brackets (single, or joint once married on one income), Social Security
@@ -1671,7 +1671,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       if (spare < 0) card -= spare; else if (card > 0) { const pay = Math.min(card, spare); card -= pay; }
       // credit runs out: past about $30,000 of card debt the shortfall can't be borrowed, so the plan simply doesn't fit
       card = Math.min(30000, card * (1 + cardR));
-      inv = inv * (1 + r) + save + match;
+      const gift = num(P.giftMo) && a < (num(P.giftUntil) || 25) ? num(P.giftMo) * 12 : 0;
+      inv = inv * (1 + r) + save + match + gift;
       if (inv < 0) { card -= inv; inv = 0; }
       const nw = inv + (homePrice ? homePrice - homeBal : 0) - loan - card;
       // could stop working: investments (at 4% a year) plus a pension and VA pay cover the costs
@@ -1743,7 +1744,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         const grp = (title, fields, note) => `<div class="sgrp"><h4>${title}</h4><div class="sfields">${fields}</div>${note ? `<p class="snote">${note}</p>` : ''}</div>`;
         const f = (label, ctl, cls) => `<label class="${cls || ''}"><span>${label}</span>${ctl}</label>`;
         const chk = (k, on, label) => `<label class="schk"><input type="checkbox" data-st="${k}"${on ? ' checked' : ''}><span>${label}</span></label>`;
-        let out = grp('You', f('Age now', inp('age', P.age, '18'), 'n') + f('Saved so far', inp('saved', P.saved, '0'), 'm'));
+        let out = grp('You', f('Age now', inp('age', P.age, '18'), 'n') + f('Saved so far', inp('saved', P.saved, '0'), 'm')
+          + f('Family adds a month', inp('giftMo', P.giftMo, '0'), 'm') + (num(P.giftMo) ? f('Until age', inp('giftUntil', P.giftUntil, '25'), 'n') : ''),
+          num(P.giftMo) ? `${usd0(num(P.giftMo))} a month from family (a custodial account or a 529, say) until ${num(P.giftUntil) || 25}, invested with the rest.` : '');
         out += grp('Work', f('Job', sel('job', JOBS.map(j => [j[0], `${j[0]} · ${usd0(j[1])}`]), P.job), 'wide')
           + f('Getting there', sel('route', [['', `Usual: ${ROUTES[usualRoute][0]}`], ...Object.entries(ROUTES).filter(([k]) => k !== usualRoute).map(([k, v]) => [k, v[0]])], P.route), 'wide')
           + f('School covered (%)', inp('help', P.help, '50'), 'n'),
