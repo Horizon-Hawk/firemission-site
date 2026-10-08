@@ -788,7 +788,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <tr><td>Balance, start → end of year</td>${cell(m => `${amt(m.startBalance)}<div class="muted" style="font-size:11px">→ ${amt(m.endBalance)}</div>`)}</tr>
         <tr><td>Rate (worked out)</td>${cell(m => m.rate ? pct1(Math.round(m.rate * 1000) / 1000) : '—')}</tr>
         <tr><td>Payment (principal + interest)</td>${cell(m => amt(m.piPayment) + (m.paceMonthly && m.piPayment && m.paceMonthly > m.piPayment + 20 ? `<div class="muted" style="font-size:11px">you paid about ${usd0(m.paceMonthly)} a month</div>` : ''))}</tr>
-        <tr><td>Paid off around</td>${cell(m => m.payoffPace ? `<b>${m.payoffPace}</b>${m.payoffScheduled && m.payoffScheduled !== m.payoffPace ? `<div class="muted" style="font-size:11px">${m.payoffScheduled} on the regular payment</div>` : ''}` : '—')}</tr>
+        <tr><td>Paid off around<div class="muted" style="font-size:12px">on the regular payment</div></td>${cell(m => (m.payoffScheduled || m.payoffPace) ? `<b>${m.payoffScheduled || m.payoffPace}</b>${m.payoffPace && m.payoffScheduled && m.payoffPace < m.payoffScheduled ? `<div class="muted" style="font-size:11px">${m.payoffPace} if you kept paying like last year</div>` : ''}` : '—')}</tr>
         </table></div>`;
     }
     if (R.ras || (R.r1099s || []).length) {
@@ -1037,8 +1037,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const regular = cats.reduce((x, c) => x + c.monthly, 0);
     const bills = (R ? R.recurring : []).filter(r => r.active && ['Housing', 'Loans'].includes(r.category) && !f.catOff[r.category])
       .map(r => {
-        const m = ((R && R.mortgages) || []).find(x => x.payoffPace && r.name.toLowerCase().includes(x.lender.split(' ')[0].toLowerCase()));
-        return { key: r.key, name: r.name, monthly: r.perYear / 12, end: f.ends[r.key] || '', auto: m ? m.payoffPace : null, mortgage: m || null };
+        const m = ((R && R.mortgages) || []).find(x => (x.payoffScheduled || x.payoffPace) && r.name.toLowerCase().includes(x.lender.split(' ')[0].toLowerCase()));
+        return { key: r.key, name: r.name, monthly: r.perYear / 12, end: f.ends[r.key] || '', auto: m ? m.payoffScheduled || m.payoffPace : null, mortgage: m || null };
       });
     const target = f.spendMode === 'target' && num(f.target) > 0;
     const allowance = num(f.irrAllowance);
@@ -1164,7 +1164,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       </table><div class="foot" style="margin-top:10px"><button class="btn" id="addAcct" type="button">Add an account</button>${QUICK.map(([n, k], i) => `<button class="linkbtn" data-quick="${i}" type="button">+ ${esc(n)}</button>`).join("")}${m.accts.some(a => a.fromFile) ? '<span class="muted" style="font-size:13px">Change and market cover the dates of the first and last statement.</span>' : ''}</div></div>`;
 
     // retirement spending
-    const billRows = m.bills.map(b => `<div class="toggle"><span>${esc(b.name)} <span class="muted">${usd0(b.monthly)}/mo</span></span><label class="amt" style="font-size:13px;color:var(--muted)">paid off in <input data-end="${esc(b.key)}" inputmode="numeric" value="${esc(b.end)}" placeholder="${b.auto ? b.auto + ' *' : 'year'}" title="${b.auto ? 'From the 1098: paid off around ' + b.auto + ' at the pace you paid last year' : ''}" style="width:78px;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label></div>`).join('');
+    const billRows = m.bills.map(b => `<div class="toggle"><span>${esc(b.name)} <span class="muted">${usd0(b.monthly)}/mo</span></span><label class="amt" style="font-size:13px;color:var(--muted)">paid off in <input data-end="${esc(b.key)}" inputmode="numeric" value="${esc(b.end)}" placeholder="${b.auto ? b.auto + ' *' : 'year'}" title="${b.auto ? 'From the 1098: paid off around ' + b.auto + ' on the regular payment' : ''}" style="width:78px;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label></div>`).join('');
     h += `<div class="split"><div class="card"><h3>Spending in retirement</h3>
       <p>You spent about <b>${usd0(m.actual)}</b> a month${S.result ? '' : ' (load statements on the Spending page)'}. Without irregular purchases, a regular month is <b>${usd0(m.regular)}</b>.</p>
       ${m.irregular.length ? `<details${m.irregular.length <= 8 ? ' open' : ''}><summary style="cursor:pointer"><b>${m.irregular.length} irregular purchases</b>, ${usd0(m.irrTotal)} in all. Tick any that will keep happening.</summary>
@@ -1173,7 +1173,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       ${m.irrTotal ? `<p class="muted" style="margin:0;font-size:13px">Last year's irregular purchases averaged ${usd0(m.irrTotal / m.mo)} a month.</p>` : ''}
       <p style="margin:12px 0 2px">Which kinds of spending continue in retirement?</p>
       ${m.cats.map((c, i) => `<label class="toggle"><input type="checkbox" id="cat-${i}" data-cat="${esc(c.category)}"${c.on ? ' checked' : ''}> ${esc(c.category)}<span class="amt num${c.on ? '' : ' muted'}">${usd0(c.monthly)}/mo</span></label>`).join('')}
-      ${billRows ? `<p style="margin:10px 0 2px">Loans and mortgages drop off the year they're paid off:</p>${billRows}${m.bills.some(b => b.auto && !b.end) ? '<p class="muted" style="margin:4px 0 0;font-size:12px">* from your 1098, at the pace you paid last year; type a year to change it.</p>' : ''}` : ''}
+      ${billRows ? `<p style="margin:10px 0 2px">Loans and mortgages drop off the year they're paid off:</p>${billRows}${m.bills.some(b => b.auto && !b.end) ? '<p class="muted" style="margin:4px 0 0;font-size:12px">* from your 1098, on the regular payment; type a year to change it (for example if you pay extra).</p>' : ''}` : ''}
       <label class="toggle" style="margin-top:6px"><input type="checkbox" id="fTarget" data-fc="spendMode"${f.spendMode === 'target' ? ' checked' : ''}> Use my own number instead<input id="fTargetAmt" data-f="target" inputmode="numeric" value="${esc(f.target)}" placeholder="$ / month" style="width:110px;margin-left:auto;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label>
       <p style="margin:10px 0 0">Retirement spending: <b>${usd0(m.base)}</b> a month now${m.atRetire && Math.round(m.atRetire.spend) !== Math.round(m.base) ? `, <b>${usd0(m.atRetire.spend)}</b> at ${m.ra} once loans are paid off` : ''}.</p></div>
       <div class="card"><h3>Income that lasts for life</h3><p>Keeps coming after you stop working, so it shrinks what investments must cover. Untick anything that won't last (a rental you'd sell).</p>
