@@ -1091,16 +1091,18 @@
       const last = list[list.length - 1], year = (last.end || last.payDate).slice(0, 4);
       const ytdDays = days(year + '-01-01', last.end || last.payDate) + 1, scale = 365 / Math.max(30, ytdDays);
       const sum = (rows, kind) => r2(rows.filter(l => !kind || l.kind === kind).reduce((x, l) => x + l.ytd, 0));
-      const found = [];
+      const found = [], payKeys = new Set();
       for (const s of list) {
         const amt = s.deposits.length ? s.deposits : [{ amount: s.current.net }];
         for (const d of amt) {
           const t = all.find(t => t.accountType !== 'invest' && Math.abs(t.amount - d.amount) < 0.01 && days(s.payDate, t.date) >= -5 && days(s.payDate, t.date) <= 5);
           if (!t) continue;
           found.push({ payDate: s.payDate, amount: d.amount, account: t.account, date: t.date });
-          if (t.counts === 'unknown_in' || t.counts === 'income') { t.counts = 'income'; t.incomeType = 'paycheck'; t.source = employer + ' pay'; t.review = null; }
+          if (t.counts === 'unknown_in' || t.counts === 'income') { t.counts = 'income'; t.incomeType = 'paycheck'; t.source = employer + ' pay'; t.review = null; payKeys.add(t.key); }
         }
       }
+      // the stubs only cover some paydays: the same payroll deposit on other days is the same paycheck, under one name
+      for (const t of all) if (payKeys.has(t.key) && t.counts === 'income' && t.incomeType === 'paycheck') t.source = employer + ' pay';
       const y = last.ytd || {};
       const lines = { taxes: last.taxes, before: last.before, after: last.after, employer: last.employerPaid };
       const stockYtd = sum(last.before, 'stock') + sum(last.after, 'stock');

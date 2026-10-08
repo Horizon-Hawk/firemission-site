@@ -363,7 +363,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   </details>
 </div>
 
-<script src="core.js?v=e4c47c6858"></script>
+<script src="core.js?v=bad25c141f"></script>
 <script>
 (function () {
   'use strict';
@@ -1140,7 +1140,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       for (const [k, name, ytd, match, kind0] of rows) {
         if (!ytd) continue;
         const id = 'pay:' + k + ':' + p.employer;
-        accts.push({ id, name, value: num(f.payBal[id]), kind: f.kinds[id] || kind0, monthly: (ytd + match) * p.scale / 12, autoMonthly: (ytd + match) * p.scale / 12, fromPay: true });
+        const auto = (ytd + match) * p.scale / 12;
+        accts.push({ id, name, value: num(f.payBal[id]), kind: f.kinds[id] || kind0, monthly: f.contrib[id] != null && f.contrib[id] !== '' ? num(f.contrib[id]) : auto, autoMonthly: auto, fromPay: true });
       }
     }
     for (const t of f.typed) accts.push({ id: t.id, name: t.name || 'Account', value: num(t.balance), kind: t.kind || guessKind(t.name || ''), monthly: num(t.monthly), typed: t });
@@ -1341,7 +1342,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const irrMo = m.irrOutMo, setAside = typed(B.setAside) ? num(B.setAside) : irrMo;
     const outN = cats.reduce((x, c) => x + use(c), 0) + setAside, left = inUsual - outN;
     const actualLeft = (R.totals.income - R.totals.spend) / mo;
-    const payroll = (R.pay || []).reduce((x, p) => x + ((p.retireYtd || 0) + (p.matchYtd || 0) + (p.stockYtd || 0) + (p.hsaYtd || 0)) * p.scale / 12, 0);
+    const payroll = m.accts.filter(a => a.fromPay || (a.fromFile && a.autoMonthly > 0)).reduce((x, a) => x + a.monthly, 0);
     const bankSave = R.totals.saving / mo;
 
     let h = `<div class="panel"><div class="fire-head">
@@ -1442,7 +1443,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const arows = m.accts.map(a => a.fromPay
       ? `<tr><td>${esc(a.name)}<div class="muted" style="font-size:12px">from pay stubs</div></td><td>${kindSel(a.id, a.kind, 'data-akind')}</td>
          <td class="r"><input data-paybal="${esc(a.id)}" inputmode="numeric" value="${esc(f.payBal[a.id] || '')}" placeholder="balance" aria-label="Balance"></td><td class="muted" colspan="3" style="font-size:12px">type the balance from its website</td>
-         <td class="r num">${usd0(a.monthly)}</td><td></td></tr>`
+         <td class="r"><input data-contrib="${esc(a.id)}" inputmode="numeric" value="${esc(f.contrib[a.id] || '')}" placeholder="${Math.round(a.autoMonthly)}" aria-label="Monthly contribution">${!f.contrib[a.id] ? `<div class="muted" style="font-size:11px">from pay stubs${/stock/i.test(a.id) ? '; 0 if you sell the shares' : ''}</div>` : ''}</td><td></td></tr>`
       : a.typed
       ? `<tr><td><input class="name" data-typed="${esc(a.id)}" data-tf="name" value="${esc(a.name)}" placeholder="e.g. Spouse 403(b)" aria-label="Account name"></td><td>${kindSel(a.id, a.kind, 'data-tkind')}</td>
          <td class="r"><input data-typed="${esc(a.id)}" data-tf="balance" inputmode="numeric" value="${esc(a.typed.balance)}" placeholder="balance" aria-label="Balance"></td><td class="muted" colspan="3">typed in</td>
