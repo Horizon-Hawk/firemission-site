@@ -1358,24 +1358,33 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const payroll = m.accts.filter(a => a.fromPay || (a.fromFile && a.autoMonthly > 0)).reduce((x, a) => x + a.monthly, 0);
     const bankSave = R.totals.saving / mo;
 
+    // the month adds up top to bottom: money in, less bills and everyday spending, is what's left before one-time costs;
+    // the set-aside for one-time costs (last year's pace unless you type one) comes off after that
+    const BILLS0 = ['Housing', 'Loans', 'Utilities & phone', 'Insurance', 'Subscriptions', 'Taxes'];
+    const billsN = cats.filter(c => BILLS0.includes(c.k)).reduce((x, c) => x + use(c), 0), everyN = cats.filter(c => !BILLS0.includes(c.k)).reduce((x, c) => x + use(c), 0);
+    const before = inUsual - billsN - everyN;
     let h = `<div class="panel"><div class="fire-head">
       <div><span class="label">A normal month in</span><span class="big">${usd0(inUsual)}</span><span class="sub">take-home pay and other income${inc.some(i => i.typed) ? ', at the usual amounts you set' : ''}</span></div>
-      <div><span class="label">A normal month out</span><span class="big">${usd0(outN)}</span><span class="sub">bills, everyday spending and ${usd0(setAside)} set aside for one-time costs</span></div>
-      <div><span class="label">Left over</span><span class="big ${left < 0 ? 'out' : 'in'}">${usd0(left)}</span><span class="sub">last ${moN} months actually: ${usd0(actualLeft)} a month</span></div>
+      <div><span class="label">Regular spending</span><span class="big">${usd0(billsN + everyN)}</span><span class="sub">bills ${usd0(billsN)} and everyday ${usd0(everyN)}, without one-time costs</span></div>
+      <div><span class="label">Left before one-time costs</span><span class="big ${before < 0 ? 'out' : 'in'}">${usd0(before)}</span><span class="sub">${setAside ? `after setting aside ${usd0(setAside)} for one-time costs: <b class="${left < 0 ? 'out' : 'in'}">${usd0(left)}</b>` : 'no set-aside for one-time costs'}</span></div>
     </div></div>
     <p class="estimate">Averages from your statements. Type your own amounts in any box; they're kept in this browser only.</p>`;
 
-    // why last year and a normal month differ
     const gaps = inc.filter(i => Math.abs(i.usual - i.avg) >= 25);
-    const budDiff = cats.reduce((x, c) => x + (c.avg - use(c)), 0);
-    const line = (label, v, note) => `<tr><td>${label}${note ? `<div class="note">${note}</div>` : ''}</td><td class="r num">${v >= 0 ? '+' : ''}${usd0(v)}</td></tr>`;
-    h += `<div class="card tablewrap bud"><h3>Last year vs. a normal month</h3><p>What actually happened, and what changes in a normal month. All per month.</p><table>
-      <tr><td>Last ${moN} months, actually left over</td><td class="r num">${usd0(actualLeft)}</td></tr>
-      ${gaps.map(i => line(`${esc(i.source)} at its usual amount`, i.usual - i.avg, i.stopped ? `nothing since ${monName(i.last)}; ${usd0(i.avg)} a month on average with the missed months` : `${usd0(i.avg)} a month on average`)).join('')}
-      ${irrMo ? line('One-time costs taken out', irrMo, 'listed below') : ''}
-      ${setAside ? line('Set aside for one-time costs', -setAside, typed(B.setAside) ? 'your amount' : 'last year\'s pace; type your own below') : ''}
-      ${Math.abs(budDiff) >= 1 ? line('Your budget changes', budDiff) : ''}
-      <tr class="tot"><td>A normal month, left over</td><td class="r num ${left < 0 ? 'out' : ''}">${usd0(left)}</td></tr></table>
+    const line = (label, v, note, cls) => `<tr class="${cls || ''}"><td>${label}${note ? `<div class="note">${note}</div>` : ''}</td><td class="r num ${cls && v < 0 ? 'out' : ''}">${usd0(v)}</td></tr>`;
+    h += `<div class="card tablewrap bud"><h3>How a normal month adds up</h3><p>Per month, top to bottom. Each line opens up further down the page.</p><table>
+      ${line('Money in', inUsual, inc.some(i => i.typed) ? 'at the usual amounts you set' : 'average deposits')}
+      ${line('Bills', -billsN, 'mortgages, loans, utilities, insurance, subscriptions')}
+      ${line('Everyday spending', -everyN, 'groceries, dining, shopping and the rest')}
+      ${line('Left before one-time costs', before, '', 'tot')}
+      ${line('Set aside for one-time costs', -setAside, typed(B.setAside) ? 'your amount' : `last year's pace (${usd0(m.irrTotal)} over ${moN} months); type your own under Money out`)}
+      ${line('Left over', left, '', 'tot')}</table>
+      <details style="margin-top:10px"><summary style="cursor:pointer">Compared with the last ${moN} months</summary><table style="margin-top:6px">
+      <tr><td>Actually left over, ${moN}-month average</td><td class="r num">${usd0(actualLeft)}</td></tr>
+      ${gaps.map(i => `<tr><td>${esc(i.source)} at its usual amount<div class="note">${i.stopped ? `nothing since ${monName(i.last)}; ` : ''}${usd0(i.avg)} a month on average</div></td><td class="r num">${i.usual - i.avg >= 0 ? '+' : ''}${usd0(i.usual - i.avg)}</td></tr>`).join('')}
+      ${irrMo ? `<tr><td>One-time costs, replaced by the set-aside<div class="note">${usd0(irrMo)} actual, ${usd0(setAside)} set aside</div></td><td class="r num">${irrMo - setAside >= 0 ? '+' : ''}${usd0(irrMo - setAside)}</td></tr>` : ''}
+      ${Math.abs(cats.reduce((x, c) => x + (c.avg - use(c)), 0)) >= 1 ? `<tr><td>Your budget amounts</td><td class="r num">${usd0(cats.reduce((x, c) => x + (c.avg - use(c)), 0))}</td></tr>` : ''}
+      <tr class="tot"><td>A normal month, left over</td><td class="r num">${usd0(left)}</td></tr></table></details>
       ${payroll >= 1 ? `<p style="margin:10px 0 0">Not in these numbers: about <b>${usd0(payroll)}</b> a month invested straight from your pay (retirement, match, stock plan)${bankSave >= 1 ? ` and ${usd0(bankSave)} a month moved from the bank to savings or investments` : ''}. That money is saved before or after the budget, never spent.</p>` : ''}</div>`;
 
     // income
