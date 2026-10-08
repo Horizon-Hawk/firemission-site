@@ -96,7 +96,7 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .dropzone strong { font-family: var(--display); font-size: 18px; letter-spacing: .03em; }
 .dropzone small { color: var(--muted); font-size: 13px; }
 .drop p { margin: 0; font-size: 13px; color: var(--muted); }
-.accts { padding: 8px 16px 14px; min-width: 0; display: grid; }
+.accts { padding: 8px 16px 14px; min-width: 0; display: grid; align-content: start; }
 .acct { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--rule); }
 .acct:first-of-type { border-top: 0; }
 .acct input[type=text] { border: 1px solid transparent; background: transparent; border-radius: 4px; padding: 2px 4px; margin-left: -5px; font-weight: 600; width: 100%; min-width: 0; }
@@ -127,6 +127,12 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .ask-head h2 { font-size: 22px; }
 .ask-head p { margin: 0; font-size: 14px; color: var(--muted); max-width: 70ch; }
 .qgroup { padding: 6px 18px 12px; }
+.qinfo { margin: 0 18px 14px; padding: 8px 12px; border-radius: var(--r); background: var(--sunk); font-size: 14px; }
+.qinfo summary { cursor: pointer; color: var(--muted); }
+.qinfo summary b { color: var(--ink); }
+.qinfo[open] summary { margin-bottom: 4px; }
+.qdone > summary { cursor: pointer; padding: 12px 18px; font-size: 15px; }
+.qdone[open] > summary { border-bottom: 1px solid var(--rule); }
 .qgroup h3 { font-size: 15px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 8px 0 4px; }
 .q { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 14px; align-items: center; padding: 8px 0; border-top: 1px dotted var(--rule); }
 @media (max-width: 600px) { .q { grid-template-columns: minmax(0, 1fr) auto; } .q select { grid-column: 1 / -1; } }
@@ -170,6 +176,10 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--sunk); }
 td select { border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); padding: 1px 4px; font-size: 13px; max-width: 190px; }
 .empty { padding: 18px; color: var(--muted); text-align: center; border: 1px dashed var(--rule-strong); border-radius: var(--r); }
 .foot { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.savebar { padding: 12px 16px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); }
+.savebar .label { margin-right: 4px; }
+.savebar .sep { width: 1px; align-self: stretch; background: var(--rule); margin: 0 4px; }
+@media (max-width: 560px) { .savebar .sep { display: none; } .savebar .label { width: 100%; } }
 .toast { font-size: 13px; color: var(--in); }
 details.how { font-size: 14px; color: var(--muted); }
 details.how summary { cursor: pointer; color: var(--ink); font-weight: 600; }
@@ -180,8 +190,8 @@ details.how ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; m
 .srcsum { display: none; }
 .sources.collapsed { grid-template-columns: minmax(0, 1fr); }
 .sources.collapsed .drop, .sources.collapsed .accts { display: none; }
-.sources.collapsed .srcsum { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 250px) auto; gap: 10px 16px; align-items: center; padding: 12px 18px; }
-@media (max-width: 640px) { .sources.collapsed .srcsum { grid-template-columns: minmax(0, 1fr) auto; } .srcsum .dropzone { grid-column: 1 / -1; grid-row: 2; } }
+.sources.collapsed .srcsum { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: center; padding: 12px 18px; }
+@media (max-width: 480px) { .sources.collapsed .srcsum { grid-template-columns: minmax(0, 1fr); } }
 .srcsum .meta { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .srcsum .dropzone { padding: 8px 12px; gap: 0; }
 .srcsum .dropzone strong { font-size: 15px; }
@@ -195,6 +205,7 @@ body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-inve
   background: var(--bg); border-bottom: 2px solid var(--ink); padding-top: 6px; margin-top: -6px; }
 .stick.stuck { box-shadow: 0 6px 12px -8px color-mix(in srgb, var(--ink) 45%, transparent); }
 #stickSentinel { height: 0; }
+#ask, #board { scroll-margin-top: 70px; }
 .pages { display: flex; gap: 0; min-width: 0; }
 .minidrop { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 5px 12px 5px 8px; border: 1.5px dashed var(--rule-strong); border-radius: 8px;
   background: var(--surface); color: var(--ink); cursor: pointer; flex: none; }
@@ -252,8 +263,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <p class="pg-spend">Drop in the exports from your bank, credit cards and investment accounts. See what comes in, where it goes and what you keep, with transfers between your own accounts taken out so nothing counts twice.</p>
       <p class="pg-taxes">What was taxed and withheld, how your savings are taxed, and the earnings Social Security has on record. Built from pay stubs, W-2s and your Social Security statement.</p>
       <p class="pg-invest">What your investments are worth, what it takes to stop working, and when you could. Built from your own statements, or numbers you type in.</p>
+      <span class="disclaim">Free tools, not financial, tax or investment advice</span>
     </div>
-    <span class="disclaim">Free tools, not financial, tax or investment advice</span>
   </header>
   <div class="stick" id="stick">
     <nav class="pages" aria-label="Pages">
@@ -309,11 +320,13 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     <div class="tabbody" id="tabbody"></div>
   </section>
 
-  <section class="foot pg-spend" aria-label="Save">
-    <button class="btn primary" id="dlCsv" type="button">Download cleaned CSV</button>
-    <button class="btn" id="copyCsv" type="button">Copy CSV</button>
-    <button class="btn" id="dlAnswers" type="button">Save my answers</button>
-    <label class="btn" for="ansIn">Load saved answers</label>
+  <section class="foot savebar pg-spend" aria-label="Save">
+    <span class="label">Keep it</span>
+    <button class="btn primary" id="dlCsv" type="button">Download transactions (CSV)</button>
+    <button class="btn" id="copyCsv" type="button">Copy as CSV</button>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="btn" id="dlAnswers" type="button" title="A small file with your answers, so next month you skip the questions">Save my answers</button>
+    <label class="btn" for="ansIn">Load answers</label>
     <input type="file" id="ansIn" accept=".json" hidden>
     <span class="toast" id="toast" role="status"></span>
   </section>
@@ -505,8 +518,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         .concat([(n => n ? n + ' pay stub' + (n > 1 ? 's' : '') : '')(S.files.filter(f => f.result.kind === 'paystub' && !f.result.les).length),
           (n => n ? n + ' LES' : '')(S.files.filter(f => f.result.les).length), kindN('w2') ? kindN('w2') + ' W-2' + (kindN('w2') > 1 ? 's' : '') : '',
           kindN('ssa') ? 'Social Security statement' : '', kindN('ras') + kindN('r1099') ? 'DFAS' : '', kindN('f1098') ? kindN('f1098') + ' mortgage 1098' + (kindN('f1098') > 1 ? 's' : '') : '', unread ? `<b class="out">${unread} couldn't be read</b>` : '']).filter(Boolean).join(' · ');
-      $('srcsum').innerHTML = `<div style="min-width:0"><b>${S.files.length} file${S.files.length > 1 ? 's' : ''} loaded</b>${A.length ? ` · ${A.length} account${A.length > 1 ? 's' : ''}` : ''}<div class="meta">${parts}${S.result.start ? ` · ${S.result.start} to ${S.result.end}` : ''}</div></div>
-        <label class="dropzone" for="fileIn"><strong>Add more files</strong><small>drop here or click</small></label>
+      $('srcsum').innerHTML = `<div style="min-width:0"><b>${S.files.length} file${S.files.length > 1 ? 's' : ''} loaded</b>${A.length ? ` · ${A.length} account${A.length > 1 ? 's' : ''}` : ''}<div class="meta">${parts}</div></div>
         <div class="acts"><button class="btn" id="showFiles" type="button">Show files</button><button class="linkbtn" id="clearAll2" type="button">Remove all</button></div>`;
     }
     if (!S.files.length) { el.innerHTML = '<div class="empty">No files yet. Drop your exports on the left.</div>'; return; }
@@ -579,7 +591,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       })()}
       <div><span class="label">Left over</span><span class="big${left < 0 ? ' out' : ''}">${usd0(left)}</span><span class="sub">${left < 0 ? 'more went out than came in' : 'after spending and investing'}</span></div></div>
       <div class="period"><span>${R.start} to ${R.end} · about ${mo.toFixed(1)} months · ${R.accounts.length} account${R.accounts.length > 1 ? 's' : ''}</span>
-      <span>${T.internalCount} transfers between your accounts left out${R.duplicatesRemoved.length ? ' · ' + R.duplicatesRemoved.length + ' repeated rows from overlapping files removed' : ''}${(R.copies || []).map(c => ` · <b>${esc(c.file)}</b> is a copy of ${esc(c.sameAs)}, counted once <button class="linkbtn" data-drop="${esc(c.file)}" type="button">Remove it</button>`).join('')}${T.pendingIn ? ' · <b class="out">' + usd0(T.pendingIn) + ' in deposits not counted yet</b>' : ''}</span></div>`;
+      <span>${T.internalCount} transfers between your accounts left out${R.duplicatesRemoved.length ? ' · ' + R.duplicatesRemoved.length + ' repeated rows from overlapping files removed' : ''}${(R.copies || []).map(c => ` · <b>${esc(c.file)}</b> is a copy of ${esc(c.sameAs)}, counted once <button class="linkbtn" data-drop="${esc(c.file)}" type="button">Remove it</button>`).join('')}${T.pendingIn ? ' · <a href="#ask" class="out" data-jump="ask"><b>' + usd0(T.pendingIn) + ' in deposits not counted yet</b></a>' : ''}</span></div>`;
   }
 
   function renderAsk() {
@@ -598,7 +610,12 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <p>Each answer covers every payment from that sender, and is remembered.</p></div>`;
     if (rv.deposits.length) h += `<div class="qgroup"><h3>Money that came in</h3>${rv.deposits.map(x => row('payers', x, FM.PAYER_CHOICES, 'in')).join('')}</div>`;
     if (rv.sentOut.length) h += `<div class="qgroup"><h3>Money sent to an account you didn't load</h3>${rv.sentOut.map(x => row('outs', x, FM.OUT_CHOICES, 'out')).join('')}</div>`;
-    if (rv.cardsNotLoaded.length) h += `<div class="qgroup"><h3>Card payments for cards you didn't load</h3><p class="muted" style="margin:0 0 4px;font-size:14px">Counted as spending for now. Add that card's export to see what was bought.</p>${rv.cardsNotLoaded.map(x => `<div class="q"><div><div class="who">${esc(x.name)}</div><div class="det">${x.n}× · ${esc(x.account)}</div></div><div class="amt num out">${usd0(x.total)}</div><span></span></div>`).join('')}</div>`;
+    if (rv.cardsNotLoaded.length) {
+      const tot = rv.cardsNotLoaded.reduce((x, c) => x + c.total, 0);
+      h += `<details class="qinfo"><summary><b>${rv.cardsNotLoaded.length} card${rv.cardsNotLoaded.length > 1 ? 's' : ''} you paid but didn't load</b> · ${usd0(tot)}, counted as spending. Add ${rv.cardsNotLoaded.length > 1 ? 'their exports' : 'its export'} to see what was bought.</summary>
+        ${rv.cardsNotLoaded.map(x => `<div class="q"><div><div class="who">${esc(x.name)}</div><div class="det">${x.n}× · ${esc(x.account)}</div></div><div class="amt num out">${usd0(x.total)}</div><span></span></div>`).join('')}</details>`;
+    }
+    if (!unanswered) h = `<details class="qdone"><summary><b>All questions answered</b> <span class="muted">· change an answer</span></summary>${h}</details>`;
     el.innerHTML = h;
   }
 
@@ -1307,6 +1324,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     if (ev.target.id === 'useRet') { F().ret = ev.target.dataset.ret; savePrefs(); renderInvest(); }
     const q = ev.target.closest('[data-quick]');
     if (q) { const [name, kind] = QUICK[+q.dataset.quick]; F().typed.push({ id: 't' + Date.now(), name, kind, balance: '', monthly: '' }); savePrefs(); renderInvest(); }
+    const jump = ev.target.closest('[data-jump]');
+    if (jump) { ev.preventDefault(); const t = $(jump.dataset.jump); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     const sa = ev.target.closest('[data-ssage]');
     if (sa) { F().ssAge = sa.dataset.ssage; savePrefs(); renderInvest(); }
     if (ev.target.id === 'addAcct') { F().typed.push({ id: 't' + Date.now(), name: '', kind: 'retire', balance: '', monthly: '' }); savePrefs(); renderInvest(); }
