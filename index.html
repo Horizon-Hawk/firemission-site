@@ -218,6 +218,15 @@ body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-inve
 .bud tr.tot td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
 .bud .note { font-size: 12px; color: var(--muted); font-weight: 400; }
 .over { color: var(--accent); } .under { color: var(--in); }
+.bud .catbtn { all: unset; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
+.bud .catbtn::before { content: '\25B8'; font-size: 11px; color: var(--muted); }
+.bud .catbtn[aria-expanded="true"]::before { content: '\25BE'; }
+.bud .catbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bud tr.det > td { background: var(--bg); padding: 4px 10px 10px 22px; }
+.bud .payees { width: 100%; font-size: 13px; }
+.bud .payees td { padding: 3px 6px; border: 0; }
+.bud .payees details summary { cursor: pointer; }
+.bud .payees .tx { color: var(--muted); font-size: 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; margin: 4px 0 2px; }
 .stick { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
   background: var(--bg); border-bottom: 2px solid var(--ink); padding-top: 6px; margin-top: -6px; }
 .stick.stuck { box-shadow: 0 6px 12px -8px color-mix(in srgb, var(--ink) 45%, transparent); }
@@ -1373,9 +1382,20 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <tr class="tot"><td>Total</td><td class="r num">${usd0(inAvg)}</td><td class="r num">${usd0(inUsual)}</td></tr></table></div>`;
 
     // spending
-    const row = c => { const b = use(c), d = lastM ? c.last - b : 0;
-      return `<tr><td>${esc(c.k)}</td><td class="r num">${usd0(c.avg)}</td><td class="r num">${lastM ? `${usd0(c.last)}${Math.abs(d) >= Math.max(25, b * 0.1) ? `<div class="note ${d > 0 ? 'over' : 'under'}">${usd0(Math.abs(d))} ${d > 0 ? 'over' : 'under'}</div>` : ''}` : '—'}</td>
-        <td class="r"><input data-bc="${esc(c.k)}" inputmode="numeric" value="${esc(B.cats[c.k] || '')}" placeholder="${Math.round(c.avg)}" aria-label="Monthly budget for ${esc(c.k)}"></td></tr>`; };
+    // each category opens to the payees it adds up, and each payee to its payments
+    const open = S.budOpen || (S.budOpen = new Set());
+    const detail = k => {
+      const rows = win.filter(t => (t.counts === 'spend' || t.counts === 'offset') && t.category === k && !m.irrIds.has(t.id));
+      const by = {};
+      for (const t of rows) (by[t.name || t.key] || (by[t.name || t.key] = [])).push(t);
+      const list = Object.entries(by).map(([n, ts]) => ({ n, ts: ts.sort((a, b) => a.date < b.date ? 1 : -1), total: -ts.reduce((x, t) => x + t.amount, 0) })).sort((a, b) => b.total - a.total);
+      return `<tr class="det"><td colspan="4"><table class="payees">${list.map(p => `<tr><td><details><summary>${esc(p.n)} <span class="note">${p.ts.length} payment${p.ts.length > 1 ? 's' : ''}, last ${p.ts[0].date}</span></summary>
+        <div class="tx">${p.ts.map(t => `<span class="num">${t.date}</span><span>${esc(t.account)}</span><span class="num">${usd0(-t.amount)}</span>`).join('')}</div></details></td>
+        <td class="r num" style="vertical-align:top">${usd0(p.total)}</td><td class="r num" style="vertical-align:top">${usd0(p.total / mo)}/mo</td></tr>`).join('')}</table></td></tr>`;
+    };
+    const row = c => { const b = use(c), d = lastM ? c.last - b : 0, isOpen = open.has(c.k);
+      return `<tr><td><button type="button" class="catbtn" data-bopen="${esc(c.k)}" aria-expanded="${isOpen}">${esc(c.k)}</button></td><td class="r num">${usd0(c.avg)}</td><td class="r num">${lastM ? `${usd0(c.last)}${Math.abs(d) >= Math.max(25, b * 0.1) ? `<div class="note ${d > 0 ? 'over' : 'under'}">${usd0(Math.abs(d))} ${d > 0 ? 'over' : 'under'}</div>` : ''}` : '—'}</td>
+        <td class="r"><input data-bc="${esc(c.k)}" inputmode="numeric" value="${esc(B.cats[c.k] || '')}" placeholder="${Math.round(c.avg)}" aria-label="Monthly budget for ${esc(c.k)}"></td></tr>${isOpen ? detail(c.k) : ''}`; };
     const grp = (title, list) => list.length ? `<tr class="grp"><td colspan="3">${title}</td><td class="r num">${usd0(list.reduce((x, c) => x + use(c), 0))}</td></tr>${list.map(row).join('')}` : '';
     const bills = cats.filter(c => BILLS.includes(c.k)), every = cats.filter(c => !BILLS.includes(c.k));
     const ending = m.bills.map(b => ({ b, y: num(b.end) || b.auto })).filter(x => x.y).sort((a, b) => a.y - b.y);
@@ -1576,6 +1596,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     savePrefs(); renderInvest();
   });
   document.addEventListener('click', ev => {
+    const bo = ev.target.closest('[data-bopen]');
+    if (bo) { const o = S.budOpen || (S.budOpen = new Set()), k = bo.dataset.bopen; if (o.has(k)) o.delete(k); else o.add(k); renderBudget(); return; }
     const uu = ev.target.closest('[data-useusual]');
     if (uu) { const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {}); B.usual[uu.dataset.useusual] = uu.dataset.amt; savePrefs(); renderBudget(); return; }
     if (ev.target.id === 'useRet') { F().ret = ev.target.dataset.ret; savePrefs(); renderInvest(); }
