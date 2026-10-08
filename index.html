@@ -1388,6 +1388,44 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       ${ending.length ? `<p style="margin:10px 0 0">Loans that end: ${ending.map(x => `<b>${esc(x.b.name)}</b> in ${x.y} frees ${usd0(x.b.stops)} a month${x.b.stops < x.b.monthly - 1 ? ` (${usd0(x.b.monthly - x.b.stops)} of tax and insurance keeps going)` : ''}`).join('; ')}. Set payoff years on the FIRE page.</p>` : ''}
       ${hidden ? `<p class="muted" style="margin:6px 0 0;font-size:13px">${usd0(hidden.avg)} a month went to a card whose export isn't loaded, so what was bought on it can't be sorted. Add that card's export to see it.</p>` : ''}</div>`;
 
+
+    // bills by how often they come: fixed schedules (with the next due date), monthly bills whose amount varies
+    // (power, phone), and what's expected this month and next, since a quarterly bill makes one month look high
+    const recs = (R.recurring || []).filter(r => r.active);
+    const recKeys = new Set(recs.map(r => r.key.split(' · ')[0]));
+    const nMonths = Math.max(1, (R.months || []).length || full.length), vary = {};
+    for (const t of win) {
+      if (t.counts !== 'spend' || t.amount >= 0 || recKeys.has(t.key) || !BILLS.includes(t.category) || m.irrIds.has(t.id)) continue;
+      const v = vary[t.key] || (vary[t.key] = { name: t.name, category: t.category, months: {}, last: '' });
+      v.months[ym(t.date)] = (v.months[ym(t.date)] || 0) - t.amount; if (t.date > v.last) v.last = t.date;
+    }
+    const varies = Object.values(vary).map(v => { const a = Object.values(v.months); return Object.assign(v, { n: a.length, typical: med(a), lo: Math.min(...a), hi: Math.max(...a) }); })
+      .filter(v => v.n >= nMonths * 0.6 && days(v.last, end) <= 45).sort((a, b) => b.typical - a.typical);
+    const ORDER = ['weekly', 'every 2 weeks', 'twice a month', 'monthly', 'every 3 months', 'every 6 months', 'yearly'];
+    const perCycle = { weekly: 52 / 12, 'every 2 weeks': 26 / 12, 'twice a month': 2 };
+    const dueIn = (r, mk) => { // how many times a fixed bill comes due in month mk (YYYY-MM)
+      if (!r.next) return 0;
+      if (perCycle[r.cadence]) return perCycle[r.cadence];
+      const step = { monthly: 1, 'every 3 months': 3, 'every 6 months': 6, yearly: 12 }[r.cadence] || 1;
+      const diff = (+mk.slice(0, 4) - +r.next.slice(0, 4)) * 12 + (+mk.slice(5, 7) - +r.next.slice(5, 7));
+      return diff >= 0 && diff % step === 0 ? 1 : step === 1 && diff < 0 && -diff <= 1 ? 1 : 0;
+    };
+    const nowK = end.slice(0, 7), nextK = new Date(Date.UTC(+nowK.slice(0, 4), +nowK.slice(5, 7), 15)).toISOString().slice(0, 7);
+    const expect = mk => recs.reduce((x, r) => x + r.typical * dueIn(r, mk), 0) + varies.reduce((x, v) => x + v.typical, 0);
+    if (recs.length || varies.length) {
+      const grpRows = ORDER.filter(c => recs.some(r => r.cadence === c)).map(c => {
+        const list = recs.filter(r => r.cadence === c).sort((a, b) => b.perYear - a.perYear);
+        return `<tr class="grp"><td colspan="3">${c[0].toUpperCase() + c.slice(1)}</td><td class="r num">${usd0(list.reduce((x, r) => x + r.perYear / 12, 0))}</td></tr>` +
+          list.map(r => `<tr><td>${esc(r.name)}<div class="note">${esc(r.category)}</div></td><td class="r num">${usd0(r.typical)}</td><td class="r num">${r.next || '—'}</td><td class="r num">${usd0(r.perYear / 12)}</td></tr>`).join('');
+      }).join('');
+      const varRows = varies.length ? `<tr class="grp"><td colspan="3">Monthly, amount varies</td><td class="r num">${usd0(varies.reduce((x, v) => x + v.typical, 0))}</td></tr>` +
+        varies.map(v => `<tr><td>${esc(v.name)}<div class="note">${esc(v.category)} · paid ${v.n} of ${nMonths} months</div></td><td class="r num">${usd0(v.typical)}<div class="note">${usd0(v.lo)}–${usd0(v.hi)}</div></td><td class="r num">—</td><td class="r num">${usd0(v.typical)}</td></tr>`).join('') : '';
+      h += `<div class="card tablewrap bud"><h3>Bills by how often they come</h3>
+        <p>Regular bills and subscriptions, grouped by schedule. A bill every 3 or 6 months makes the month it lands in look high; "a month" spreads it out.</p>
+        <p style="margin:0 0 8px"><b>Expected in ${monName(nowK + '-15')}: ${usd0(expect(nowK))}</b> · in ${monName(nextK + '-15')}: ${usd0(expect(nextK))} <span class="note">(these bills only, at their usual amounts)</span></p>
+        <table><tr><th>Bill</th><th class="r">Amount</th><th class="r">Next due</th><th class="r">A month</th></tr>${grpRows}${varRows}</table></div>`;
+    }
+
     // one-time costs
     if (m.irregular.length) h += `<div class="card tablewrap bud"><details><summary style="cursor:pointer"><b>One-time costs, last ${moN} months:</b> ${m.irregular.length} payments, ${usd0(m.irrTotal)} (${usd0(m.irrTotal / mo)} a month)</summary>
       <p style="margin:8px 0">Payments of $500 or more made once or twice, outside regular bills. They're left out of the averages above and covered by the set-aside instead. Tick any that will keep happening on the FIRE page.</p><table>
