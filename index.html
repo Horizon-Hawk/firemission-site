@@ -272,6 +272,7 @@ body[data-page="start"] .sources, body[data-page="start"] #trust { display: none
 .bud .catbtn::before { content: '\25B8'; font-size: 11px; color: var(--muted); }
 .bud .catbtn[aria-expanded="true"]::before { content: '\25BE'; }
 .bud .catbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bud input.tname { width: 100%; min-width: 140px; text-align: left; font-family: var(--body); }
 .bud tr.det > td { background: var(--bg); padding: 4px 10px 10px 22px; }
 .bud .payees { width: 100%; font-size: 13px; }
 .bud .payees td { padding: 3px 6px; border: 0; }
@@ -450,7 +451,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   // the Starting Out choices are kept on their own (no statements involved), so the sample never resets them
   try { S.start = JSON.parse(localStorage.getItem('fm-start') || 'null') || S.prefs.start || null; } catch (e) { S.start = S.prefs.start || null; }
   delete S.prefs.start;
-  const saveStart = () => { try { localStorage.setItem('fm-start', JSON.stringify(S.start)); } catch (e) { /* private window */ } };
+  const saveStart = () => { try { localStorage.setItem('fm-start', JSON.stringify(S.start)); localStorage.setItem('fm-tbudget', JSON.stringify(S.tb || null)); } catch (e) { /* private window */ } };
+  try { S.tb = JSON.parse(localStorage.getItem('fm-tbudget') || 'null'); } catch (e) { S.tb = null; }
   const savePrefs = () => { if (!S.sample) store.set(S.prefs); saveStart(); };
 
   // ---------- sample household (made up) ----------
@@ -1135,8 +1137,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     ev.preventDefault();
     const b = ev.currentTarget;
     if (Date.now() - forgetArmed > 4000) { forgetArmed = Date.now(); b.textContent = 'Click again to forget them'; setTimeout(() => { b.textContent = 'Forget my answers'; }, 4000); return; }
-    try { localStorage.removeItem('fm-prefs'); localStorage.removeItem('fm-start'); } catch (e) { /* nothing stored */ }
-    S.prefs = blankPrefs(); S.start = null; forgetArmed = 0; b.textContent = 'Forget my answers';
+    try { localStorage.removeItem('fm-prefs'); localStorage.removeItem('fm-start'); localStorage.removeItem('fm-tbudget'); } catch (e) { /* nothing stored */ }
+    S.prefs = blankPrefs(); S.start = null; S.tb = null; forgetArmed = 0; b.textContent = 'Forget my answers';
     if (S.sample) loadSample(); else rerun();
     toast('Answers forgotten in this browser');
   });
@@ -1420,11 +1422,50 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     return { B, m, mo, moN, win, end, ym, monName, med, typed, inc, inUsual, inAvg, full, lastM, cat, BILLS, cats, use, irrMo, setAside, outN, left, actualLeft, payroll, bankSave, billsN, everyN, before, spare: Math.max(0, left > 0 ? left : before) };
   }
 
+  /* A typed-in budget: income lines and monthly amounts by category, for anyone without statements (or who'd rather
+     plan than look back). Same math as the statement budget: money in, less bills and everyday spending, less a
+     set-aside for one-time costs. */
+  const T_BILLS = ['Rent or mortgage', 'Car payment', 'Loans and credit cards', 'Utilities and phone', 'Insurance', 'Subscriptions'];
+  const T_EVERY = ['Groceries', 'Dining out', 'Gas and transit', 'Shopping', 'Health', 'Kids', 'Entertainment', 'Personal care', 'Gifts and giving', 'Other'];
+  const hasStatements = R => !!(R && R.txns.some(t => t.inWindow && (t.counts === 'spend' || t.counts === 'income')));
+  const TB = () => (S.tb = Object.assign({ mode: '', tin: [{ id: 't1', name: 'Take-home pay', amt: '' }], tout: {}, tset: '' }, S.tb || {}));
+  const budgetTyped = () => TB().mode === 'typed' || !hasStatements(S.result);
+  function typedBudget() {
+    const B = TB();
+    const inUsual = B.tin.reduce((x, r) => x + num(r.amt), 0);
+    const billsN = T_BILLS.reduce((x, k) => x + num(B.tout[k]), 0), everyN = T_EVERY.reduce((x, k) => x + num(B.tout[k]), 0);
+    const setAside = num(B.tset), before = inUsual - billsN - everyN, left = before - setAside;
+    return { B, inUsual, billsN, everyN, before, setAside, left, spare: Math.max(0, left > 0 ? left : before) };
+  }
+  function renderTypedBudget(el) {
+    const t = typedBudget(), B = t.B, stm = hasStatements(S.result) && !S.sample, anyStm = hasStatements(S.result);
+    const box = (attr, v, ph, label) => `<input ${attr} inputmode="numeric" value="${esc(v || '')}" placeholder="${ph}" aria-label="${esc(label)}">`;
+    let h = `<div class="panel"><div class="fire-head">
+      <div><span class="label">Money in</span><span class="big">${usd0(t.inUsual)}</span><span class="sub">a month, what you typed</span></div>
+      <div><span class="label">Regular spending</span><span class="big">${usd0(t.billsN + t.everyN)}</span><span class="sub">bills ${usd0(t.billsN)} and everyday ${usd0(t.everyN)}</span></div>
+      <div><span class="label">Left before one-time costs</span><span class="big ${t.before < 0 ? 'out' : 'in'}">${usd0(t.before)}</span><span class="sub">${t.setAside ? `after setting aside ${usd0(t.setAside)}: <b class="${t.left < 0 ? 'out' : 'in'}">${usd0(t.left)}</b>` : 'no set-aside for one-time costs yet'}</span></div>
+    </div></div>
+    <div class="card tablewrap bud"><p style="margin:0;color:var(--ink)">${stm ? 'You\'re typing a budget instead of using your statements. ' : 'No statements needed: type what usually comes in and goes out each month. '}It's kept in this browser only.${t.spare >= 50 ? ` See what investing some of what's left would do on the <a href="#invest">FIRE page</a>.` : ''}</p>
+      ${anyStm ? `<p style="margin:8px 0 0"><button type="button" class="linkbtn" data-bmode="stmt">${stm ? 'Use my statements instead' : 'Show the sample household instead'}</button></p>` : ''}</div>`;
+    h += `<div class="card tablewrap bud"><h3>Money in</h3><p>Take-home pay after taxes and anything else that comes in each month: a second job, a partner's pay, retired pay, rent, child support received.</p><table>
+      <tr><th>Source</th><th class="r">A month</th><th></th></tr>
+      ${B.tin.map(r => `<tr><td><input class="tname" data-tin="${esc(r.id)}" data-tf="name" value="${esc(r.name)}" placeholder="e.g. Second job" aria-label="Income name"></td><td class="r">${box(`data-tin="${esc(r.id)}" data-tf="amt"`, r.amt, '0', 'Monthly amount')}</td><td class="r">${B.tin.length > 1 ? `<button type="button" class="linkbtn" data-tindel="${esc(r.id)}">Remove</button>` : ''}</td></tr>`).join('')}
+      <tr><td colspan="3"><button type="button" class="linkbtn" data-tinadd="1">+ Add income</button></td></tr>
+      <tr class="tot"><td>Total</td><td class="r num">${usd0(t.inUsual)}</td><td></td></tr></table></div>`;
+    const grp = (title, list, sum) => `<tr class="grp"><td>${title}</td><td class="r num">${usd0(sum)}</td></tr>` + list.map(k => `<tr><td>${esc(k)}</td><td class="r">${box(`data-tout="${esc(k)}"`, B.tout[k], '0', k + ' a month')}</td></tr>`).join('');
+    h += `<div class="card tablewrap bud"><h3>Money out</h3><p>What each usually costs in a month. Bills that come every few months (car insurance, property tax): divide by the months between them.</p><table>
+      ${grp('Bills', T_BILLS, t.billsN)}${grp('Everyday', T_EVERY, t.everyN)}
+      <tr class="grp"><td>Set aside for one-time costs<div class="note">repairs, projects, big purchases, trips</div></td><td class="r">${box('data-tset="1"', B.tset, '0', 'Monthly set-aside for one-time costs')}</td></tr>
+      <tr class="tot"><td>Total</td><td class="r num">${usd0(t.billsN + t.everyN + t.setAside)}</td></tr></table></div>
+      <p class="muted" style="font-size:13px">A tool for your own numbers, not financial advice.</p>`;
+    el.innerHTML = h;
+  }
+
   function renderBudget() {
     const el = $('budgetPage');
     if (document.body.dataset.page !== 'budget') return;
     const R = S.result;
-    if (!R || !R.txns.some(t => t.inWindow && (t.counts === 'spend' || t.counts === 'income'))) { el.innerHTML = '<div class="panel"><div class="empty">Drop a year of bank and card exports above to build a budget from what you actually spend.</div></div>'; return; }
+    if (budgetTyped()) { renderTypedBudget(el); return; }
     const { B, m, mo, moN, win, end, ym, monName, med, typed, inc, inUsual, inAvg, full, lastM, cat, BILLS, cats, use, irrMo, setAside, outN, left, actualLeft, payroll, bankSave, billsN, everyN, before } = budgetModel(R);
     let h = `<div class="panel"><div class="fire-head">
       <div><span class="label">A normal month in</span><span class="big">${usd0(inUsual)}</span><span class="sub">take-home pay and other income${inc.some(i => i.typed) ? ', at the usual amounts you set' : ''}</span></div>
@@ -1435,6 +1476,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const gaps = inc.filter(i => Math.abs(i.usual - i.avg) >= 25);
     const line = (label, v, note, cls) => `<tr class="${cls || ''}"><td>${label}${note ? `<div class="note">${note}</div>` : ''}</td><td class="r num ${cls && v < 0 ? 'out' : ''}">${usd0(v)}</td></tr>`;
     h += `<div class="card tablewrap bud"><p style="margin:0;color:var(--ink)">${usd0(inUsual)} in, ${usd0(billsN)} in bills and ${usd0(everyN)} everyday leaves <b>${usd0(before)}</b> a month. The ${usd0(setAside)} set aside for one-time costs (${typed(B.setAside) ? 'your amount' : "last year's pace; type your own under Money out"}) leaves <b class="${left < 0 ? 'out' : 'in'}">${usd0(left)}</b>.${Math.max(0, left > 0 ? left : before) >= 50 ? ` See what investing some of it would do on the <a href="#invest">FIRE page</a>.` : ''}</p>
+      <p style="margin:6px 0 0;font-size:13px"><button type="button" class="linkbtn" data-bmode="typed">Type a budget instead</button> <span class="muted">(plan a month without your statements)</span></p>
       <details style="margin-top:10px"><summary style="cursor:pointer">Compared with the last ${moN} months</summary><table style="margin-top:6px">
       <tr><td>Actually left over, ${moN}-month average</td><td class="r num">${usd0(actualLeft)}</td></tr>
       ${gaps.map(i => `<tr><td>${esc(i.source)} at its usual amount<div class="note">${i.stopped ? `nothing since ${monName(i.last)}; ` : ''}${usd0(i.avg)} a month on average</div></td><td class="r num">${i.usual - i.avg >= 0 ? '+' : ''}${usd0(i.usual - i.avg)}</td></tr>`).join('')}
@@ -1536,8 +1578,10 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   /* the money left over on the Budget page, invested each month: options to choose from, and the plan without it */
   function budgetFireHTML(m) {
     const R = S.result;
-    if (!R || m.age0 == null || !R.txns.some(t => t.inWindow && (t.counts === 'spend' || t.counts === 'income'))) return '';
-    const bm = budgetModel(R), spare = bm.spare;
+    if (m.age0 == null) return '';
+    const typedB = budgetTyped();
+    if (!typedB && !hasStatements(R)) return '';
+    const bm = typedB ? typedBudget() : budgetModel(R), spare = bm.spare;
     const f = F(), keep = f.typed, cur = keep.find(a => a.id === 'budget'), curAmt = cur ? Math.round(num(cur.monthly)) : 0;
     if (spare < 50 && !cur) return '';
     const whatIf = amt => { F().typed = keep.filter(a => a.id !== 'budget').concat(amt ? [{ id: 'budget', name: 'Invested from budget', kind: 'taxable', balance: '0', monthly: String(amt) }] : []);
@@ -2029,6 +2073,13 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       if (d.st === 'job') P.route = '';
       savePrefs(); renderStart(); return;
     }
+    if (t.closest('#budgetPage') && (d.tin != null || d.tout != null || d.tset != null)) {
+      const B = typedBudget().B, v = t.value.trim();
+      if (d.tin != null) { const r = B.tin.find(x => x.id === d.tin); if (r) r[d.tf] = v; }
+      else if (d.tout != null) { if (v === '') delete B.tout[d.tout]; else B.tout[d.tout] = v; }
+      else B.tset = v;
+      savePrefs(); renderBudget(); return;
+    }
     if (t.closest('#budgetPage') && (d.bpay != null || d.btx != null)) {
       const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {});
       const offP = B.offPayee = B.offPayee || {}, offT = B.offTx = B.offTx || {}, keep = f.keepIrr;
@@ -2085,6 +2136,11 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     if (scl) { const sp = SP(), k = sp.compare && sp.cur === 'B' ? 'B' : 'A'; sp[k] = scl.dataset.stclear === 'blank' ? startBlank(sp[k]) : Object.assign(startDefaults(), { age: sp[k].age, job: sp[k].job, route: sp[k].route }); savePrefs(); renderStart(); return; }
     const stc = ev.target.closest('[data-stcur]');
     if (stc) { SP().cur = stc.dataset.stcur; savePrefs(); renderStart(); return; }
+    const bmd = ev.target.closest('[data-bmode]');
+    if (bmd) { const B = typedBudget().B; B.mode = bmd.dataset.bmode; savePrefs(); renderBudget(); return; }
+    if (ev.target.closest('[data-tinadd]')) { const B = typedBudget().B; B.tin.push({ id: 't' + Date.now(), name: '', amt: '' }); savePrefs(); renderBudget(); return; }
+    const tdel = ev.target.closest('[data-tindel]');
+    if (tdel) { const B = typedBudget().B; B.tin = B.tin.filter(x => x.id !== tdel.dataset.tindel); savePrefs(); renderBudget(); return; }
     const bsm = ev.target.closest('[data-bsmall]');
     if (bsm) { const o = S.budSmall || (S.budSmall = {}); o[bsm.dataset.bsmall] = !o[bsm.dataset.bsmall]; renderBudget(); return; }
     const bo = ev.target.closest('[data-bopen]');
