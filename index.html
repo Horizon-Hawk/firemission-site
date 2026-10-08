@@ -212,7 +212,12 @@ details.how ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; m
 .srcsum .acts { display: flex; gap: 8px; }
 
 /* pages */
-body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-invest, body:not([data-page="taxes"]) .pg-taxes { display: none !important; }
+body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-invest, body:not([data-page="taxes"]) .pg-taxes, body:not([data-page="budget"]) .pg-budget { display: none !important; }
+.bud td.r input { width: 96px; text-align: right; }
+.bud tr.grp td { font-weight: 600; color: var(--ink); padding-top: 14px; border-bottom: 1px solid var(--rule-strong); }
+.bud tr.tot td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
+.bud .note { font-size: 12px; color: var(--muted); font-weight: 400; }
+.over { color: var(--accent); } .under { color: var(--in); }
 .stick { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
   background: var(--bg); border-bottom: 2px solid var(--ink); padding-top: 6px; margin-top: -6px; }
 .stick.stuck { box-shadow: 0 6px 12px -8px color-mix(in srgb, var(--ink) 45%, transparent); }
@@ -227,13 +232,13 @@ body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-inve
 .minidrop b { font-size: 14px; }
 .minidrop small { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 @media (max-width: 640px) {
-  .pages a { font-size: 17px; padding: 6px 10px 8px; }
+  .stick .pages a { font-size: 17px; padding: 6px 10px 8px; }
   .pages .long { display: none; }
   .minidrop { padding: 5px 8px; }
   .minidrop small { display: none; }
 }
 @media (max-width: 440px) {
-  .pages a { padding: 6px 9px 8px; }
+  .stick .pages a { font-size: 15px; letter-spacing: .02em; padding: 6px 7px 8px; }
   .minidrop { padding: 6px; }
   .minidrop span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
@@ -274,6 +279,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <span class="expand"><b>F</b>inancial <b>I</b>ndependence, <b>R</b>etire <b>E</b>arly</span>
       <p class="pg-spend">Drop in the exports from your bank, credit cards and investment accounts. See what comes in, where it goes and what you keep, with transfers between your own accounts taken out so nothing counts twice.</p>
       <p class="pg-taxes">Where your pay goes before it reaches the bank, what was taxed and withheld, and the earnings Social Security has on record. Built from pay stubs or an LES, W-2s, 1099-Rs, 1098s and your Social Security statement.</p>
+      <p class="pg-budget">A normal month: what usually comes in, what the bills and everyday spending usually cost, and what's left. Built from the same statements as the Spending page, with one-time costs and missed income set apart.</p>
       <p class="pg-invest">What your investments are worth, what it takes to stop working, and when you could. Built from your own statements, or numbers you type in.</p>
       <span class="disclaim">Free tools, not financial, tax or investment advice</span>
     </div>
@@ -283,6 +289,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <a href="#spending" data-page="spend">Spending</a>
       <a href="#invest" data-page="invest"><span class="long">Investments &amp; </span>FIRE</a>
       <a href="#taxes" data-page="taxes"><span class="long">Pay &amp; </span>Taxes</a>
+      <a href="#budget" data-page="budget">Budget</a>
     </nav>
     <label class="minidrop" id="minidrop" for="fileIn" title="Add statements: click, or drop files anywhere on the page">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -323,6 +330,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   <section class="pg-invest invest-page" id="investPage" aria-label="Investments and FIRE"></section>
   <section class="pg-taxes invest-page" id="taxesPage" aria-label="Taxes"></section>
+  <section class="pg-budget invest-page" id="budgetPage" aria-label="Budget"></section>
 
   <section class="panel pg-spend" id="board" aria-label="Summary"></section>
   <section class="panel ask pg-spend" id="ask" aria-label="Questions" hidden></section>
@@ -512,7 +520,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   // ---------- rendering ----------
-  function render() { renderFiles(); renderBoard(); renderAsk(); renderTabs(); renderInvest(); renderTaxes(); }
+  function render() { renderFiles(); renderBoard(); renderAsk(); renderTabs(); renderInvest(); renderTaxes(); renderBudget(); }
 
   function renderFiles() {
     const el = $('accts'), panel = el.closest('.sources');
@@ -1182,7 +1190,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const rasP = R && R.ras, prem = rasP ? rasP.allot.filter(a => a.type === 'Insurance').reduce((x, a) => x + a.amount, 0) : 0;
     const life = (R ? R.income : []).filter(s => ['pension', 'benefit', 'rental'].includes(s.type)).map(s => {
       const dfas = rasP && s.type === 'pension' && /retire|military|dfas/i.test(s.source);
-      return { source: s.source, type: s.type, monthly: dfas ? rasP.taxable : s.total / mo, premiums: dfas ? prem : 0, dfas, on: !f.incOff[s.source] };
+      const usual = ((S.prefs.budget || {}).usual || {})[s.source], typed = usual != null && usual !== '' && !dfas;
+      return { source: s.source, type: s.type, monthly: dfas ? rasP.taxable : typed ? num(usual) : s.total / mo, usual: typed, premiums: dfas ? prem : 0, dfas, on: !f.incOff[s.source] };
     });
     const lifeMo = life.filter(s => s.on).reduce((x, s) => x + s.monthly, 0);
     const ssAge = Math.min(70, Math.max(62, Math.round(num(f.ssAge) || 67))), ssFromStmt = ssa && ssa.byAge[ssAge] || 0, ss = num(f.ssMonthly) || ssFromStmt, wr = (num(f.wr) || 4) / 100, r = num(f.ret) / 100;
@@ -1287,6 +1296,103 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <table><tr><th>Start at</th><th class="r">Monthly</th><th class="r">Lifetime federal tax</th><th class="r">Left at ${m.END}</th><th class="r">Earliest stop age</th></tr>${rows}</table>
       <p style="margin:10px 0 0">Starting earlier usually means a little less tax (smaller checks, and 85% of each check is taxed) but smaller checks for life.${be ? ` Waiting from ${early.age} to ${late.age} pays for itself by about age <b>${be}</b> in total checks received.` : ''}</p>
       <p class="muted" style="margin:6px 0 0;font-size:13px">If you're married, the higher earner's starting age also sets the survivor's check: a surviving spouse keeps the larger of the two benefits for life, so waiting raises it and claiming early lowers it. Not financial advice.</p></div>`;
+  }
+
+  /* Budget: a normal month. Lessons from real accounts: income that stopped for a while (an empty rental) is shown at
+     its usual amount, not the average with the empty months; one-time projects are set apart and replaced by a set-aside;
+     money invested through payroll never reaches the bank, so take-home is what the budget works with; and a card whose
+     statement isn't loaded hides what was bought on it. */
+  function renderBudget() {
+    const el = $('budgetPage');
+    if (document.body.dataset.page !== 'budget') return;
+    const R = S.result;
+    if (!R || !R.txns.some(t => t.inWindow && (t.counts === 'spend' || t.counts === 'income'))) { el.innerHTML = '<div class="panel"><div class="empty">Drop a year of bank and card exports above to build a budget from what you actually spend.</div></div>'; return; }
+    const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {});
+    const m = fireModel(), mo = m.mo, moN = Math.round(mo), win = R.txns.filter(t => t.inWindow);
+    const end = win.reduce((x, t) => t.date > x ? t.date : x, ''), ym = d => d.slice(0, 7);
+    const monName = d => new Date(d.slice(0, 7) + '-15T12:00:00Z').toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const med = a => { const x = [...a].sort((p, q) => p - q), n = x.length; return n ? (n % 2 ? x[(n - 1) / 2] : (x[n / 2 - 1] + x[n / 2]) / 2) : 0; };
+    const typed = v => v != null && v !== '';
+    // income: average over the whole period, and what it usually was while it was coming in
+    const inc = (R.income || []).map(s => {
+      const rows = win.filter(t => t.counts === 'income' && t.source === s.source), byM = {};
+      for (const t of rows) byM[ym(t.date)] = (byM[ym(t.date)] || 0) + t.amount;
+      const first = rows.reduce((x, t) => !x || t.date < x ? t.date : x, ''), last = rows.reduce((x, t) => t.date > x ? t.date : x, '');
+      const span = [];
+      if (first) for (let d = new Date(ym(first) + '-15T12:00:00Z'); d.toISOString().slice(0, 7) <= ym(last); d.setUTCMonth(d.getUTCMonth() + 1)) span.push(byM[d.toISOString().slice(0, 7)] || 0);
+      const avg = s.total / mo, steady = ['weekly', 'every 2 weeks', 'twice a month', 'monthly'].includes(s.cadence);
+      const stopped = steady && last && days(last, end) > 45, normal = steady && span.length >= 3 ? med(span) : avg;
+      const usual = typed(B.usual[s.source]) ? num(B.usual[s.source]) : avg;
+      return { source: s.source, type: s.type, avg, last, stopped, normal, usual, typed: typed(B.usual[s.source]) };
+    }).filter(x => Math.abs(x.avg) >= 1 || x.typed);
+    const inUsual = inc.reduce((x, i) => x + i.usual, 0), inAvg = R.totals.income / mo;
+    // spending by category without the one-time costs, with the last full month next to it
+    const full = (R.months || R.totals.months || []).filter(x => !x.partial).map(x => x.month), lastM = full[full.length - 1];
+    const cat = {};
+    for (const t of win) {
+      if (!(t.counts === 'spend' || t.counts === 'offset') || m.irrIds.has(t.id)) continue;
+      const c = cat[t.category] || (cat[t.category] = { total: 0, last: 0 });
+      c.total -= t.amount; if (ym(t.date) === lastM) c.last -= t.amount;
+    }
+    const BILLS = ['Housing', 'Loans', 'Utilities & phone', 'Insurance', 'Subscriptions', 'Taxes'];
+    const cats = Object.entries(cat).map(([k, c]) => ({ k, avg: c.total / mo, last: c.last, bud: typed(B.cats[k]) ? num(B.cats[k]) : null })).filter(c => Math.abs(c.avg) >= 1 || c.bud != null)
+      .sort((a, b) => b.avg - a.avg);
+    const use = c => c.bud != null ? c.bud : c.avg;
+    const irrMo = m.irrOutMo, setAside = typed(B.setAside) ? num(B.setAside) : irrMo;
+    const outN = cats.reduce((x, c) => x + use(c), 0) + setAside, left = inUsual - outN;
+    const actualLeft = (R.totals.income - R.totals.spend) / mo;
+    const payroll = (R.pay || []).reduce((x, p) => x + ((p.retireYtd || 0) + (p.matchYtd || 0) + (p.stockYtd || 0) + (p.hsaYtd || 0)) * p.scale / 12, 0);
+    const bankSave = R.totals.saving / mo;
+
+    let h = `<div class="panel"><div class="fire-head">
+      <div><span class="label">A normal month in</span><span class="big">${usd0(inUsual)}</span><span class="sub">take-home pay and other income${inc.some(i => i.typed) ? ', at the usual amounts you set' : ''}</span></div>
+      <div><span class="label">A normal month out</span><span class="big">${usd0(outN)}</span><span class="sub">bills, everyday spending and ${usd0(setAside)} set aside for one-time costs</span></div>
+      <div><span class="label">Left over</span><span class="big ${left < 0 ? 'out' : 'in'}">${usd0(left)}</span><span class="sub">last ${moN} months actually: ${usd0(actualLeft)} a month</span></div>
+    </div></div>
+    <p class="estimate">Averages from your statements. Type your own amounts in any box; they're kept in this browser only.</p>`;
+
+    // why last year and a normal month differ
+    const gaps = inc.filter(i => Math.abs(i.usual - i.avg) >= 25);
+    const budDiff = cats.reduce((x, c) => x + (c.avg - use(c)), 0);
+    const line = (label, v, note) => `<tr><td>${label}${note ? `<div class="note">${note}</div>` : ''}</td><td class="r num">${v >= 0 ? '+' : ''}${usd0(v)}</td></tr>`;
+    h += `<div class="card tablewrap bud"><h3>Last year vs. a normal month</h3><p>What actually happened, and what changes in a normal month. All per month.</p><table>
+      <tr><td>Last ${moN} months, actually left over</td><td class="r num">${usd0(actualLeft)}</td></tr>
+      ${gaps.map(i => line(`${esc(i.source)} at its usual amount`, i.usual - i.avg, i.stopped ? `nothing since ${monName(i.last)}; ${usd0(i.avg)} a month on average with the missed months` : `${usd0(i.avg)} a month on average`)).join('')}
+      ${irrMo ? line('One-time costs taken out', irrMo, 'listed below') : ''}
+      ${setAside ? line('Set aside for one-time costs', -setAside, typed(B.setAside) ? 'your amount' : 'last year\'s pace; type your own below') : ''}
+      ${Math.abs(budDiff) >= 1 ? line('Your budget changes', budDiff) : ''}
+      <tr class="tot"><td>A normal month, left over</td><td class="r num ${left < 0 ? 'out' : ''}">${usd0(left)}</td></tr></table>
+      ${payroll >= 1 ? `<p style="margin:10px 0 0">Not in these numbers: about <b>${usd0(payroll)}</b> a month invested straight from your pay (retirement, match, stock plan)${bankSave >= 1 ? ` and ${usd0(bankSave)} a month moved from the bank to savings or investments` : ''}. That money is saved before or after the budget, never spent.</p>` : ''}</div>`;
+
+    // income
+    h += `<div class="card tablewrap bud"><h3>Money in</h3><p>Take-home deposits. If something stopped for a while (an empty rental, time between jobs), type what it usually brings in. The FIRE page uses the same amount.</p><table>
+      <tr><th>Source</th><th class="r">Average / mo</th><th class="r">Usual / mo</th></tr>
+      ${inc.map(i => `<tr><td>${esc(i.source)}<div class="note">${i.stopped ? `<span class="out">nothing since ${monName(i.last)}</span>${['rental', 'pension', 'benefit'].includes(i.type) ? '' : '; if it now comes in under another name, leave this empty'}` : i.last ? 'last ' + i.last : ''}${i.stopped && !i.typed && ['rental', 'pension', 'benefit'].includes(i.type) && i.normal > i.avg + 25 ? ` · <button type="button" class="linkbtn" data-useusual="${esc(i.source)}" data-amt="${Math.round(i.normal)}">use ${usd0(i.normal)}, its usual month</button>` : ''}</div></td>
+        <td class="r num">${usd0(i.avg)}</td><td class="r"><input data-bu="${esc(i.source)}" inputmode="numeric" value="${esc(B.usual[i.source] || '')}" placeholder="${Math.round(i.avg)}" aria-label="Usual monthly from ${esc(i.source)}"></td></tr>`).join('')}
+      <tr class="tot"><td>Total</td><td class="r num">${usd0(inAvg)}</td><td class="r num">${usd0(inUsual)}</td></tr></table></div>`;
+
+    // spending
+    const row = c => { const b = use(c), d = lastM ? c.last - b : 0;
+      return `<tr><td>${esc(c.k)}</td><td class="r num">${usd0(c.avg)}</td><td class="r num">${lastM ? `${usd0(c.last)}${Math.abs(d) >= Math.max(25, b * 0.1) ? `<div class="note ${d > 0 ? 'over' : 'under'}">${usd0(Math.abs(d))} ${d > 0 ? 'over' : 'under'}</div>` : ''}` : '—'}</td>
+        <td class="r"><input data-bc="${esc(c.k)}" inputmode="numeric" value="${esc(B.cats[c.k] || '')}" placeholder="${Math.round(c.avg)}" aria-label="Monthly budget for ${esc(c.k)}"></td></tr>`; };
+    const grp = (title, list) => list.length ? `<tr class="grp"><td colspan="3">${title}</td><td class="r num">${usd0(list.reduce((x, c) => x + use(c), 0))}</td></tr>${list.map(row).join('')}` : '';
+    const bills = cats.filter(c => BILLS.includes(c.k)), every = cats.filter(c => !BILLS.includes(c.k));
+    const ending = m.bills.map(b => ({ b, y: num(b.end) || b.auto })).filter(x => x.y).sort((a, b) => a.y - b.y);
+    const hidden = cats.find(c => /card not loaded/i.test(c.k));
+    h += `<div class="card tablewrap bud"><h3>Money out</h3><p>A month's average without one-time costs, last month${lastM ? ` (${monName(lastM + '-15')})` : ''} next to it, and your budget. Leave a box empty to use the average.</p><table>
+      <tr><th>Category</th><th class="r">Average / mo</th><th class="r">Last month</th><th class="r">Budget / mo</th></tr>
+      ${grp('Bills', bills)}${grp('Everyday', every)}
+      <tr class="grp"><td colspan="3">Set aside for one-time costs<div class="note">repairs, projects, big purchases</div></td><td class="r"><input data-bs="1" inputmode="numeric" value="${esc(B.setAside)}" placeholder="${Math.round(irrMo)}" aria-label="Monthly set-aside for one-time costs"></td></tr>
+      <tr class="tot"><td colspan="3">Total</td><td class="r num">${usd0(outN)}</td></tr></table>
+      ${ending.length ? `<p style="margin:10px 0 0">Loans that end: ${ending.map(x => `<b>${esc(x.b.name)}</b> in ${x.y} frees ${usd0(x.b.stops)} a month${x.b.stops < x.b.monthly - 1 ? ` (${usd0(x.b.monthly - x.b.stops)} of tax and insurance keeps going)` : ''}`).join('; ')}. Set payoff years on the FIRE page.</p>` : ''}
+      ${hidden ? `<p class="muted" style="margin:6px 0 0;font-size:13px">${usd0(hidden.avg)} a month went to a card whose export isn't loaded, so what was bought on it can't be sorted. Add that card's export to see it.</p>` : ''}</div>`;
+
+    // one-time costs
+    if (m.irregular.length) h += `<div class="card tablewrap bud"><details><summary style="cursor:pointer"><b>One-time costs, last ${moN} months:</b> ${m.irregular.length} payments, ${usd0(m.irrTotal)} (${usd0(m.irrTotal / mo)} a month)</summary>
+      <p style="margin:8px 0">Payments of $500 or more made once or twice, outside regular bills. They're left out of the averages above and covered by the set-aside instead. Tick any that will keep happening on the FIRE page.</p><table>
+      ${m.irregular.slice().sort((a, b) => a.amount - b.amount).map(t => `<tr><td>${esc(t.name)}<div class="note">${t.date} · ${esc(t.category)}</div></td><td class="r num">${usd0(-t.amount)}</td></tr>`).join('')}</table></details></div>`;
+    h += `<p class="muted" style="font-size:13px">A tool for your own numbers, not financial advice.</p>`;
+    el.innerHTML = h;
   }
 
   function renderInvest() {
@@ -1396,17 +1502,23 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   function setPage() {
-    const p = location.hash === '#invest' ? 'invest' : location.hash === '#taxes' ? 'taxes' : 'spend';
+    const p = location.hash === '#invest' ? 'invest' : location.hash === '#taxes' ? 'taxes' : location.hash === '#budget' ? 'budget' : 'spend';
     document.body.dataset.page = p;
     document.querySelectorAll('.pages a').forEach(a => a.setAttribute('aria-current', a.dataset.page === p ? 'page' : 'false'));
     const top = $('stickSentinel').getBoundingClientRect().top + window.scrollY - 8;
     if (window.scrollY > top) window.scrollTo(0, top);
-    renderInvest(); renderTaxes();
+    renderInvest(); renderTaxes(); renderBudget();
   }
   window.addEventListener('hashchange', setPage);
   document.addEventListener('change', ev => {
     const t = ev.target, d = t.dataset, f = F();
     if (t.closest('#taxesPage') && t.dataset.tx) { const tx = S.prefs.tax = S.prefs.tax || {}; if (t.value.trim() === '') delete tx[t.dataset.tx]; else tx[t.dataset.tx] = t.value.trim(); savePrefs(); renderTaxes(); return; }
+    if (t.closest('#budgetPage') && (d.bu != null || d.bc != null || d.bs != null)) {
+      const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {}), v = t.value.trim();
+      if (d.bs != null) B.setAside = v;
+      else { const o = d.bu != null ? B.usual : B.cats, k = d.bu != null ? d.bu : d.bc; if (v === '') delete o[k]; else o[k] = v; }
+      savePrefs(); renderBudget(); return;
+    }
     if (!t.closest('#investPage')) return;
     if (d.f) f[d.f] = t.value.trim();
     else if (d.fc === 'spendMode') f.spendMode = t.checked ? 'target' : 'actual';
@@ -1425,6 +1537,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     savePrefs(); renderInvest();
   });
   document.addEventListener('click', ev => {
+    const uu = ev.target.closest('[data-useusual]');
+    if (uu) { const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {}); B.usual[uu.dataset.useusual] = uu.dataset.amt; savePrefs(); renderBudget(); return; }
     if (ev.target.id === 'useRet') { F().ret = ev.target.dataset.ret; savePrefs(); renderInvest(); }
     const q = ev.target.closest('[data-quick]');
     if (q) { const [name, kind] = QUICK[+q.dataset.quick]; F().typed.push({ id: 't' + Date.now(), name, kind, balance: '', monthly: '' }); savePrefs(); renderInvest(); }
