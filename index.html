@@ -1238,6 +1238,45 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       rows, fiAge, outAge, END, ra, atRetire, tax, rmdAge, ssa, ssFromStmt, birthYear, nowNeed, fiNow: nowNeed * 12 / wr };
   }
 
+
+  /* When to start Social Security: rerun the projection for 62, full retirement age and 70 (amounts from the
+     statement) and add up federal tax from the stop age to 95: taxable retired pay and rental profit, 85% of
+     Social Security, pre-tax withdrawals, less the standard deduction, at 2026 brackets in today's dollars. */
+  function ssCompareHTML(m) {
+    const R = S.result, ssa = m.ssa;
+    if (!R || !ssa || !Object.keys(ssa.byAge).length || m.age0 == null) return '';
+    const e = taxEstimate(R), cur = S.prefs.fire, keep = { ssAge: cur.ssAge, ssMonthly: cur.ssMonthly };
+    const fra = ssa.fra || 67, ages = [...new Set([62, fra, 70, m.ssAge])].filter(a => ssa.byAge[a] && a >= m.age0).sort((a, b) => a - b);
+    const res = [];
+    try {
+      for (const a of ages) {
+        S.prefs.fire.ssAge = String(a); S.prefs.fire.ssMonthly = '';
+        const v = fireModel();
+        const pension = v.life.filter(l => l.on && l.type === 'pension').reduce((x, l) => x + l.monthly * 12, 0);
+        const rental = v.life.some(l => l.on && l.type === 'rental') ? e.v.rental : 0;
+        let tax = 0;
+        for (const r of v.rows) if (r.age >= v.ra) tax += ordTax(Math.max(0, pension + rental + (r.age >= v.ssAge ? 0.85 * v.ss * 12 : 0) + (r.preDraw || 0) - e.std));
+        const last = v.rows[v.rows.length - 1];
+        res.push({ age: a, monthly: ssa.byAge[a], tax, left: last ? last.bal : 0, outAge: v.outAge, fiAge: v.fiAge });
+      }
+    } finally { S.prefs.fire.ssAge = keep.ssAge; S.prefs.fire.ssMonthly = keep.ssMonthly; }
+    if (res.length < 2) return '';
+    const base = res.find(r => r.age === fra) || res[0];
+    const diff = (v, b, up) => { const d = v - b; return Math.abs(d) < 500 ? '' : `<div class="muted" style="font-size:11px">${d > 0 ? '+' : '−'}${usd0(Math.abs(d))}</div>`; };
+    const rows = res.map(r => `<tr class="${r.age === m.ssAge ? 'fi' : ''}"><td><button type="button" class="linkbtn" data-ssage="${r.age}">${r.age}${r.age === fra ? ' <span class="muted">(full)</span>' : ''}</button></td>
+      <td class="r num">${usd0(r.monthly)}</td><td class="r num">${usd0(r.tax)}${r === base ? '' : diff(r.tax, base.tax)}</td>
+      <td class="r num">${r.outAge ? `<span class="out">runs out at ${r.outAge}</span>` : usd0(r.left) + (r === base ? '' : diff(r.left, base.left))}</td>
+      <td class="r num">${r.fiAge != null ? r.fiAge : '—'}</td></tr>`).join('');
+    // break-even: the age when the larger later checks have paid back the checks given up by waiting
+    const early = res[0], late = base !== early ? base : res[1];
+    const be = early.age < late.age ? Math.round(late.age + (early.monthly * (late.age - early.age)) / Math.max(1, late.monthly - early.monthly)) : null;
+    return `<div class="card tablewrap"><h3>When to start Social Security</h3>
+      <p>The same plan with Social Security starting at different ages, using the amounts on your statement. Tax is federal, from ${m.ra} to ${m.END}, at today's brackets. Click an age to use it.</p>
+      <table><tr><th>Start at</th><th class="r">Monthly</th><th class="r">Lifetime federal tax</th><th class="r">Left at ${m.END}</th><th class="r">Earliest stop age</th></tr>${rows}</table>
+      <p style="margin:10px 0 0">Starting earlier usually means a little less tax (smaller checks, and 85% of each check is taxed) but smaller checks for life.${be ? ` Waiting from ${early.age} to ${late.age} pays for itself by about age <b>${be}</b> in total checks received.` : ''}</p>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">If you're married, the higher earner's starting age also sets the survivor's check: a surviving spouse keeps the larger of the two benefits for life, so waiting raises it and claiming early lowers it. Not financial advice.</p></div>`;
+  }
+
   function renderInvest() {
     const el = $('investPage');
     if (document.body.dataset.page !== 'invest') return;
@@ -1335,6 +1374,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <table><tr><th>Age</th><th class="r">Spending / mo</th><th class="r">Lifelong income / mo<div class="muted" style="font-weight:400">after tax</div></th><th class="r">From investments / mo</th><th class="r">Required withdrawal / yr</th><th class="r">Tax on withdrawals / yr</th><th class="r">Invested</th><th></th></tr>${tbl}</table>
         <p class="muted" style="margin:8px 0 0;font-size:12px">From ${m.rmdAge}, pre-tax accounts must pay out a share each year (required minimum distributions), taxed at ${pct1(m.tax)}; what isn't spent is reinvested, not lost. Roth accounts have none.</p></details>`;
     }
+    proj += ssCompareHTML(m);
     h = h.slice(0, answerAt) + proj + (proj ? '<h2 class="sect">Your numbers</h2>' : '') + h.slice(answerAt);
     el.innerHTML = h;
   }
