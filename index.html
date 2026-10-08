@@ -217,8 +217,17 @@ body[data-page="start"] .sources, body[data-page="start"] #trust { display: none
 .start-tabs { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .start-tabs button { font: inherit; font-weight: 600; padding: 5px 12px; border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--surface); color: var(--muted); cursor: pointer; }
 .start-tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-.start-form { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
-.start-form select { width: 100%; }
+.sgrp { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.sgrp h4 { margin: 6px 0 0; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.sfields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 14px; align-items: end; min-width: 0; }
+.sfields label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+.sfields label.wide { grid-column: span 2; }
+.sfields input, .sfields select { width: 100% !important; min-width: 0; height: 34px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); padding: 4px 8px; color: var(--ink); font: inherit; font-size: 14px; }
+.sfields label.schk { display: flex; gap: 8px; align-items: center; min-height: 34px; color: var(--ink); font-size: 14px; }
+.sfields label.schk input { width: auto !important; height: auto; accent-color: var(--accent); }
+.snote { grid-column: 2; margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+@media (max-width: 640px) { .sgrp { grid-template-columns: minmax(0, 1fr); } .snote { grid-column: 1; } .sfields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 380px) { .sfields label.wide { grid-column: 1 / -1; } }
 .chk { display: flex !important; gap: 8px; align-items: center; color: var(--ink) !important; font-size: 14px !important; }
 .detours { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
 .det { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; border: 1px solid var(--rule); border-radius: var(--r); padding: 9px 11px; cursor: pointer; min-width: 0; }
@@ -1726,33 +1735,33 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     // the path
     h += `<div class="card"><div class="start-tabs">${sp.compare ? ['A', 'B'].map(k => `<button type="button" data-stcur="${k}" aria-pressed="${cur === k}">${k === 'A' ? 'First path' : 'Second path'}</button>`).join('') : '<h3 style="margin:0">Your path</h3>'}
         <label class="chk"><input type="checkbox" data-stcompare${sp.compare ? ' checked' : ''}> Compare with a second path</label></div>
-      <div class="form start-form">
-        <label>Age now${inp('age', P.age, '18', 70)}</label>
-        <label>Saved so far${inp('saved', P.saved, '$0', 100)}</label>
-        <label>Job${sel('job', JOBS.map(j => [j[0], `${j[0]} · ${usd0(j[1])}`]), P.job)}</label>
-        <label>Getting there${sel('route', [['', `Usual: ${ROUTES[usualRoute][0]}`], ...Object.entries(ROUTES).filter(([k]) => k !== usualRoute).map(([k, v]) => [k, v[0]])], P.route)}</label>
-        <label>School paid by family, scholarships or GI Bill (%)${inp('help', P.help, '50', 70)}</label>
-        <label>Where you live${sel('area', Object.entries(AREA).map(([k, v]) => [k, `${v.label} (rent ${usd0(v.rent)})`]), P.area)}</label>
-        <label>Roommates until age${inp('roomTill', P.roomTill, 'none', 70)}</label>
-        <label>Car${sel('car', [['used', 'Used, paid off (about $350/mo)'], ['new', 'New, with a payment (about $950/mo)'], ['none', 'No car, transit (about $120/mo)']], P.car)}</label>
-        <label>Marriage${sel('marry', [['true', 'Get married'], ['false', 'Stay single']], P.marry !== false)}</label>
-        ${P.marry !== false ? `<label>Married at age${inp('wedding', P.wedding, '28', 70)}</label>
-        <label>Wedding cost${inp('weddingCost', P.weddingCost, '$0', 100)}</label>
-        <label>Spouse's yearly pay${inp('spousePay', P.spousePay, '$0', 100)}</label>` : ''}
-        <label>Kids${inp('kids', P.kids, '0', 60)}</label>
-        ${num(P.kids) ? `<label>First child at age${inp('kidAge', P.kidAge, '30', 70)}</label>` : ''}
-        <label>Buy a home at age${inp('home', P.home, 'rent', 70)}</label>
-        <label>Save of take-home pay (%)${inp('save', P.save, '10', 70)}</label>
-        <label class="chk"><input type="checkbox" data-st="match"${P.match ? ' checked' : ''}> Employer matches 4% into a 401(k)</label>
-      </div>
-      ${S0.mil ? `<div class="milbox"><h4>In uniform, then what</h4><div class="form start-form">
-        <label>Years in uniform${sel('milYears', [4, 6, 8, 10, 12, 20, 24, 30].map(y => [y, y >= 20 ? `${y} years (pension)` : `${y} years`]), P.milYears)}</label>
-        <label>Second career${sel('second', [['', 'Same kind of work as a civilian'], ...JOBS.filter(j => !/military/i.test(j[0])).map(j => [j[0], `${j[0]} · ${usd0(j[1])}`])], P.second)}</label>
-        <label>VA disability rating${sel('va', [[0, 'None'], [10, '10% (about $175/mo)'], [30, '30% (about $552/mo)'], [50, '50% (about $1,102/mo)'], [70, '70% (about $1,759/mo)'], [100, '100% (about $3,831/mo)']], P.va)}</label>
-        <label class="chk"><input type="checkbox" data-st="gi"${P.gi !== false ? ' checked' : ''}> Use the GI Bill for the second career's schooling</label></div>
-        <p class="muted" style="margin:8px 0 0;font-size:13px">Service ends at ${S0.svcEnd}.${S0.pensionYr ? ` Pension from then on: about <b>${usd0(S0.pensionYr / 12)}</b> a month (2% of base pay for each year served).` : ' No pension before 20 years; the Thrift Savings Plan match (up to 5% of base pay) goes with you.'}${S0.vaYr ? ` VA disability: ${usd0(S0.vaYr / 12)} a month, tax-free.` : ''} ${S0.job2 ? `${esc(S0.job2[0])}${S0.route2[1] ? ` after ${esc(S0.route2[0].toLowerCase())}${S0.gi ? ', tuition and about $2,000 a month for housing paid by the GI Bill' : ''}` : ''}, starting at ${S0.career2At}.` : `A civilian job in similar work from ${S0.svcEnd}, at about 85% of military pay.`}</p></div>` : ''}
-      ${num(P.home) ? `<p class="muted" style="margin:10px 0 0;font-size:13px">${S0.boughtAt ? `Home bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ` (the earliest the 10% down payment was saved and the payment fit 30% of household pay)` : ''}: ${usd0(S0.area.home)}.` : `A ${usd0(S0.area.home)} home never fit: 10% down saved and a payment under 30% of household pay.`}</p>` : ''}
-      <p class="muted" style="margin:6px 0 0;font-size:13px">${esc(job[0])}: about ${usd0(job[1])} a year at the middle of the career (about ${usd0(job[1] / 2080)} an hour), starting near ${usd0(job[1] * ((P.route || job[2]) === 'flight' ? 0.4 : (P.route || job[2]) === 'appr' ? 0.85 : /mil|rotc/.test(P.route || job[2]) ? 0.8 : 0.7))}. ${S0.route[1] ? `${esc(S0.route[0])}: ${S0.route[2] ? usd0(S0.route[2]) + ' a year' : 'no tuition'}${S0.route[3] ? ', paid part of the time while training' : ''}.` : ''}</p></div>`;
+      <div class="spath">
+      ${(() => {
+        const startPay = job[1] * ((P.route || job[2]) === 'flight' ? 0.4 : (P.route || job[2]) === 'appr' ? 0.85 : /mil|rotc/.test(P.route || job[2]) ? 0.8 : 0.7);
+        const grp = (title, fields, note) => `<div class="sgrp"><h4>${title}</h4><div class="sfields">${fields}</div>${note ? `<p class="snote">${note}</p>` : ''}</div>`;
+        const f = (label, ctl, cls) => `<label class="${cls || ''}"><span>${label}</span>${ctl}</label>`;
+        const chk = (k, on, label) => `<label class="schk"><input type="checkbox" data-st="${k}"${on ? ' checked' : ''}><span>${label}</span></label>`;
+        let out = grp('You', f('Age now', inp('age', P.age, '18')) + f('Saved so far', inp('saved', P.saved, '$0')));
+        out += grp('Work', f('Job', sel('job', JOBS.map(j => [j[0], `${j[0]} · ${usd0(j[1])}`]), P.job), 'wide')
+          + f('Getting there', sel('route', [['', `Usual: ${ROUTES[usualRoute][0]}`], ...Object.entries(ROUTES).filter(([k]) => k !== usualRoute).map(([k, v]) => [k, v[0]])], P.route), 'wide')
+          + f('School costs covered (%)', inp('help', P.help, '50')),
+          `${esc(job[0])}: about ${usd0(job[1])} a year mid-career (about ${usd0(job[1] / 2080)} an hour), starting near ${usd0(startPay)}.${S0.route[1] ? ` ${esc(S0.route[0])}: ${S0.route[2] ? usd0(S0.route[2]) + ' a year' : 'no tuition'}${S0.route[3] ? ', paid part of the time while training' : ''}.` : ''} Covered = family, scholarships or the GI Bill; the rest is borrowed.`);
+        if (S0.mil) out += grp('In uniform', f('Years in uniform', sel('milYears', [4, 6, 8, 10, 12, 20, 24, 30].map(y => [y, y >= 20 ? `${y} years (pension)` : `${y} years`]), P.milYears))
+          + f('Second career', sel('second', [['', 'Same kind of work as a civilian'], ...JOBS.filter(j => !/military/i.test(j[0])).map(j => [j[0], `${j[0]} · ${usd0(j[1])}`])], P.second), 'wide')
+          + f('VA disability rating', sel('va', [[0, 'None'], [10, '10% (about $175/mo)'], [30, '30% (about $552/mo)'], [50, '50% (about $1,102/mo)'], [70, '70% (about $1,759/mo)'], [100, '100% (about $3,831/mo)']], P.va))
+          + chk('gi', P.gi !== false, 'Use the GI Bill for the second career'),
+          `Service ends at ${S0.svcEnd}.${S0.pensionYr ? ` Pension from then on: about <b>${usd0(S0.pensionYr / 12)}</b> a month (2% of base pay for each year served).` : ' No pension before 20 years; the Thrift Savings Plan match (up to 5% of base pay) goes with you.'}${S0.vaYr ? ` VA disability: ${usd0(S0.vaYr / 12)} a month, tax-free.` : ''} ${S0.job2 ? `${esc(S0.job2[0])}${S0.route2[1] ? ` after ${esc(S0.route2[0].toLowerCase())}${S0.gi ? ', tuition and about $2,000 a month for housing paid by the GI Bill' : ''}` : ''}, starting at ${S0.career2At}.` : `A civilian job in similar work from ${S0.svcEnd}, at about 85% of military pay.`}`);
+        out += grp('Home and family', f('Where you live (rent)', sel('area', Object.entries(AREA).map(([k, v]) => [k, `${v.label.replace(' area', '')} · ${usd0(v.rent)}`]), P.area))
+          + f('Roommates until age', inp('roomTill', P.roomTill, 'none'))
+          + f('Car', sel('car', [['used', 'Used · $350/mo'], ['new', 'New, financed · $950'], ['none', 'Transit · $120/mo']], P.car))
+          + f('Buy a home at age', inp('home', P.home, 'rent'))
+          + f('Marriage', sel('marry', [['true', 'Get married'], ['false', 'Stay single']], P.marry !== false))
+          + (P.marry !== false ? f('Married at age', inp('wedding', P.wedding, '28')) + f('Wedding cost', inp('weddingCost', P.weddingCost, '$0')) + f("Spouse's yearly pay", inp('spousePay', P.spousePay, '$0')) : '')
+          + f('Kids', inp('kids', P.kids, '0')) + (num(P.kids) ? f('First child at age', inp('kidAge', P.kidAge, '30')) : ''),
+          num(P.home) ? (S0.boughtAt ? `Home bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ' (the earliest the 10% down payment was saved and the payment fit 30% of household pay)' : ''}: ${usd0(S0.area.home)}.` : `A ${usd0(S0.area.home)} home never fit: 10% down saved and a payment under 30% of household pay.`) : '');
+        out += grp('Saving', f('Save of take-home pay (%)', inp('save', P.save, '10')) + chk('match', P.match, 'Employer matches 4% into a 401(k)'));
+        return out;
+      })()}</div></div>`;
 
     // detours
     h += `<div class="card"><h3>Detours</h3><p>Things that happen in real lives and set money back. Tick one to see what it does to the path, and set the age it happens.</p><div class="detours">
