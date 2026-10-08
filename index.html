@@ -274,7 +274,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   </details>
 </div>
 
-<script src="core.js?v=801e26129e"></script>
+<script src="core.js?v=60ae18dcec"></script>
 <script>
 (function () {
   'use strict';
@@ -399,6 +399,19 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     fl.forEach(file => {
       if (/\.pdf$/i.test(file.name)) { addPdf(file).then(done, done); return; }
       const r = new FileReader();
+      // a saved-answers file dropped in with the statements restores the answers; it isn't a statement
+      if (/\.json$/i.test(file.name)) {
+        r.onload = () => {
+          try {
+            const a = JSON.parse(String(r.result));
+            if (!a || typeof a !== 'object' || !('payers' in a || 'outs' in a || 'fire' in a)) throw 0;
+            if (S.sample) { S.files = []; S.sample = false; S.prefs = Object.assign(blankPrefs(), store.get()); }
+            S.prefs = Object.assign(blankPrefs(), S.prefs, a); savePrefs(); toast('Answers loaded');
+          } catch (e) { S.files.push({ name: file.name, result: { kind: 'unsupported', txns: [], warnings: ['This file is not a statement or a saved-answers file.'] } }); }
+          done();
+        };
+        r.onerror = done; r.readAsText(file); return;
+      }
       r.onload = () => { addFile(file.name, String(r.result)); done(); };
       r.onerror = done;
       r.readAsText(file);
@@ -431,9 +444,10 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       const A = S.result.accounts, by = k => A.filter(a => a.type === k).length;
       const kindN = k => S.files.filter(f => f.result.kind === k).length;
       const parts = [['bank', 'bank'], ['card', 'card'], ['invest', 'investment']].map(([k, l]) => by(k) ? `${by(k)} ${l}` : '')
-        .concat([kindN('paystub') ? kindN('paystub') + ' pay stub' + (kindN('paystub') > 1 ? 's' : '') : '', kindN('w2') ? kindN('w2') + ' W-2' + (kindN('w2') > 1 ? 's' : '') : '',
+        .concat([(n => n ? n + ' pay stub' + (n > 1 ? 's' : '') : '')(S.files.filter(f => f.result.kind === 'paystub' && !f.result.les).length),
+          (n => n ? n + ' LES' : '')(S.files.filter(f => f.result.les).length), kindN('w2') ? kindN('w2') + ' W-2' + (kindN('w2') > 1 ? 's' : '') : '',
           kindN('ssa') ? 'Social Security statement' : '', kindN('ras') + kindN('r1099') ? 'DFAS' : '', unread ? `<b class="out">${unread} couldn't be read</b>` : '']).filter(Boolean).join(' · ');
-      $('srcsum').innerHTML = `<div style="min-width:0"><b>${S.files.length} file${S.files.length > 1 ? 's' : ''} loaded</b> · ${A.length} accounts<div class="meta">${parts} · ${S.result.start} to ${S.result.end}</div></div>
+      $('srcsum').innerHTML = `<div style="min-width:0"><b>${S.files.length} file${S.files.length > 1 ? 's' : ''} loaded</b>${A.length ? ` · ${A.length} account${A.length > 1 ? 's' : ''}` : ''}<div class="meta">${parts}${S.result.start ? ` · ${S.result.start} to ${S.result.end}` : ''}</div></div>
         <label class="dropzone" for="fileIn"><strong>Add more files</strong><small>drop here or click</small></label>
         <div class="acts"><button class="btn" id="showFiles" type="button">Show files</button><button class="linkbtn" id="clearAll2" type="button">Remove all</button></div>`;
     }
@@ -458,8 +472,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const stubs = S.files.filter(f => f.result.kind === 'paystub'), emps = [...new Set(stubs.map(f => f.result.employer))];
     for (const e of emps) {
       const fs = stubs.filter(f => f.result.employer === e), ds = fs.map(f => f.result.payDate).sort();
-      h += `<div class="acct"><div style="min-width:0"><b>${esc(e)}</b><div class="meta">${fs.length} pay stub${fs.length > 1 ? 's' : ''} · paid ${ds[0]} to ${ds[ds.length - 1]}</div></div>
-        <div class="acts"><span class="meta">Pay stubs</span><button class="linkbtn" data-dropmany="${esc(JSON.stringify(fs.map(f => f.name)))}" type="button">Remove</button></div></div>`;
+      const les = fs.every(f => f.result.les);
+      h += `<div class="acct"><div style="min-width:0"><b>${esc(e)}</b><div class="meta">${fs.length} ${les ? 'LES' : 'pay stub' + (fs.length > 1 ? 's' : '')} · ${les ? 'for' : 'paid'} ${ds[0]} to ${ds[ds.length - 1]}</div></div>
+        <div class="acts"><span class="meta">${les ? 'Military pay' : 'Pay stubs'}</span><button class="linkbtn" data-dropmany="${esc(JSON.stringify(fs.map(f => f.name)))}" type="button">Remove</button></div></div>`;
     }
     for (const f of S.files.filter(f => f.result.kind === 'ras' || f.result.kind === 'r1099')) h += `<div class="acct"><div style="min-width:0"><b>${f.result.kind === 'ras' ? 'DFAS retiree account statement' : esc(f.result.year + ' 1099-R')}</b><div class="meta">${esc(f.result.kind === 'ras' ? f.result.asOf || '' : f.result.payer)} · ${esc(f.name)}</div></div>
         <div class="acts"><span class="meta">Retired pay</span><button class="linkbtn" data-drop="${esc(f.name)}" type="button">Remove</button></div></div>`;
@@ -601,14 +616,15 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         ${row('<b>Take-home</b>', y.net || 0, 'in', p.found.length ? `deposited to ${esc([...new Set(p.found.map(f => f.account))].join(', '))}` : '')}</table>`;
       const empRet = L.employer.filter(l => l.kind === 'retire').reduce((x, l) => x + l.ytd, 0), empOther = L.employer.filter(l => l.kind !== 'retire').reduce((x, l) => x + l.ytd, 0);
       // plain names for payroll tax codes; Social Security stops at the yearly wage base (2026: $184,500 → $11,439)
-      const TAXNAME = [[/fed(eral)?\s*withh|\bFIT\b/i, 'Federal income tax'], [/OASDI|soc(ial)? sec/i, 'Social Security'], [/\bMED\b|medicare/i, 'Medicare'],
+      const TAXNAME = [[/fed(eral)?\s*(withh|income)|\bFIT\b/i, 'Federal income tax'], [/OASDI|soc(ial)? sec/i, 'Social Security'], [/\bMED\b|medicare/i, 'Medicare'],
         [/\bFLI\b|family leave|PFML/i, 'State paid family leave'], [/\bMLI\b|long.?term care|WA Cares/i, 'State long-term care'], [/\bSDI\b/i, 'State disability'], [/\bSIT\b|state (income|withh)/i, 'State income tax']];
-      const nice = n => { const m = TAXNAME.find(([re]) => re.test(n)); return m ? `${m[1]} <span class="muted" style="font-size:12px">${esc(n)}</span>` : esc(n); };
+      const nice = n => { const m = TAXNAME.find(([re]) => re.test(n)); return m && m[1].toLowerCase() !== n.toLowerCase() ? `${m[1]} <span class="muted" style="font-size:12px">${esc(n)}</span>` : esc(n); };
       const tpace = l => /OASDI|soc(ial)? sec/i.test(l.name) ? Math.min(l.ytd * p.scale, Math.max(l.ytd, 11439)) : l.ytd * p.scale;
       const taxRows = L.taxes.map(l => `<tr><td>${nice(l.name)}</td><td class="r num">${usd0(l.ytd)}</td><td class="r num muted">${usd0(tpace(l))}</td></tr>`).join('');
       const fedRate = p.fedWithheldYtd && y.taxable ? p.fedWithheldYtd / y.taxable : null;
       const stubs = p.stubs.slice().reverse().map(s => { const f = p.found.find(x => x.payDate === s.payDate); return `<tr><td class="num">${s.payDate}</td><td class="muted num">${s.begin || ''} – ${s.end || ''}</td><td class="r num">${usd2(s.gross)}</td><td class="r num">${usd2(s.net)}</td><td class="${f ? '' : 'muted'}">${f ? 'in ' + esc(f.account) + ' ' + f.date : 'not in the bank files loaded'}</td></tr>`; }).join('');
-      return `<div class="card tablewrap"><h3>${esc(p.employer)}: where your pay goes</h3><p>From ${p.stubs.length} pay stub${p.stubs.length > 1 ? 's' : ''}; the newest covers this year through ${p.ytdThrough}. Yearly pace scales that to 12 months.</p>${where}
+      return `<div class="card tablewrap"><h3>${esc(p.employer)}: where your pay goes</h3><p>From ${p.stubs.length} ${p.les ? 'LES' : 'pay stub' + (p.stubs.length > 1 ? 's' : '')}; the newest covers this year through ${p.ytdThrough}. Yearly pace scales that to 12 months.</p>${where}
+        ${p.les && p.allowances.some(a => a.amount > 0) ? `<p style="margin:10px 0 0">Not taxed: ${p.allowances.filter(a => a.amount > 0).map(a => `${esc(a.name)} ${usd0(a.amount)}`).join(', ')} a month. That's why taxable pay is lower than gross.</p>` : ''}
         ${empRet || empOther ? `<p style="margin:10px 0 0">Your employer also put <b class="in">${usd0(empRet)}</b> into your retirement plan${empOther ? ` and paid <b>${usd0(empOther)}</b> toward benefits` : ''} this year.</p>` : ''}
         ${p.stockYtd || (!p.planLoaded && p.retireYtd) ? `<p class="muted" style="margin:6px 0 0;font-size:13px">Counted in Invested: ${[p.stockYtd ? 'the stock plan' : '', !p.planLoaded && p.retireYtd ? 'retirement deductions and match' : ''].filter(Boolean).join(' and ')}${p.planLoaded ? '; your plan statement already counts the 401(k)' : ''}.</p>` : ''}</div>
         <div class="split"><div class="card tablewrap"><h3>Taxes taken out</h3>
@@ -630,7 +646,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   function taxEstimate(R) {
     const tx = S.prefs.tax = Object.assign({}, S.prefs.tax || {});
     const mo = Math.max(1, R.totals.monthsCovered), yr = v => v / mo * 12, val = (k, d) => tx[k] != null && tx[k] !== '' ? num(tx[k]) : d;
-    const pays = R.pay || [], w2 = (R.w2s || [])[0];
+    const thisYear = String(new Date().getFullYear());
+    const pays = (R.pay || []).filter(p => String(p.ytdThrough || '').startsWith(thisYear)), w2 = (R.w2s || [])[0];
     const wagesAuto = pays.length ? pays.reduce((x, p) => x + ((p.ytd || {}).taxable || (p.ytd || {}).gross || 0) * p.scale, 0) : w2 ? w2.wages : 0;
     const withheldAuto = pays.length ? pays.reduce((x, p) => x + p.fedWithheldYtd * p.scale, 0) : w2 ? w2.fedWithheld : 0;
     const inc = t => R.income.filter(s => s.type === t).reduce((x, s) => x + s.total, 0);
@@ -710,7 +727,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const pays = R.pay || [];
     const sum = f => pays.reduce((x, p) => x + f(p), 0);
     const taxOf = (p, re) => p.lines.taxes.filter(l => re.test(l.name)).reduce((x, l) => x + l.ytd, 0);
-    const fed = sum(p => taxOf(p, /fed(eral)?\s*withh|\bFIT\b/i)), all = sum(p => (p.ytd || {}).taxes || 0), gross = sum(p => (p.ytd || {}).gross || 0);
+    const fed = sum(p => taxOf(p, /fed(eral)?\s*(withh|income)|\bFIT\b/i)), all = sum(p => (p.ytd || {}).taxes || 0), gross = sum(p => (p.ytd || {}).gross || 0);
     const pace = sum(p => ((p.ytd || {}).taxes || 0) * p.scale) - sum(p => Math.max(0, taxOf(p, /OASDI|soc(ial)? sec/i) * p.scale - Math.max(taxOf(p, /OASDI|soc(ial)? sec/i), 11439)));
     const thru = pays.map(p => p.ytdThrough).sort().pop();
     const w2 = (R.w2s || [])[0];
@@ -734,7 +751,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     for (const p of pays) {
       const y = p.ytd || {}, L = p.lines, ret = [...L.before, ...L.after].filter(l => l.kind === 'retire');
       const tax = re => L.taxes.filter(l => re.test(l.name)).reduce((x, l) => x + l.ytd, 0);
-      const fed = tax(/fed(eral)?\s*withh|\bFIT\b/i), ssT = tax(/OASDI|soc(ial)? sec/i), med = tax(/\bMED\b|medicare/i), other = (y.taxes || 0) - fed - ssT - med;
+      const fed = tax(/fed(eral)?\s*(withh|income)|\bFIT\b/i), ssT = tax(/OASDI|soc(ial)? sec/i), med = tax(/\bMED\b|medicare/i), other = (y.taxes || 0) - fed - ssT - med;
       const preTax = (y.gross || 0) - (y.taxable || y.gross || 0);
       const roth = ret.filter(l => /roth/i.test(l.name)).reduce((x, l) => x + l.ytd, 0), pre = ret.reduce((x, l) => x + l.ytd, 0) - roth;
       const w = p.w4 || {};
@@ -747,7 +764,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <div class="card tablewrap"><h3>W-4 on file</h3>${w.status || w.extra != null ? `<table>
           <tr><td>Filing status</td><td class="r">${esc(w.status || '—')}</td></tr>
           <tr><td>Multiple jobs or spouse works</td><td class="r">${w.multipleJobs === 'Y' ? 'Yes (checked)' : w.multipleJobs === 'N' ? 'No' : '—'}</td></tr>
-          <tr><td>Dependents amount</td><td class="r num">${w.dependents != null ? usd0(w.dependents) + ' a year' : '—'}</td></tr>
+          ${w.exemptions != null ? `<tr><td>Exemptions</td><td class="r num">${w.exemptions}</td></tr>` : `<tr><td>Dependents amount</td><td class="r num">${w.dependents != null ? usd0(w.dependents) + ' a year' : '—'}</td></tr>`}
           <tr><td>Extra withholding</td><td class="r num">${w.extra ? usd0(w.extra) + ' a check<div class="muted" style="font-size:12px">about ' + usd0(w.extra * 24) + ' a year</div>' : 'none'}</td></tr></table>
           <p class="muted" style="margin:8px 0 0;font-size:13px">As printed on your newest stub. The extra amount is inside "Federal income tax withheld", not a separate line.</p>` : '<p>This stub doesn\'t print W-4 settings.</p>'}
           ${pre || roth ? `<h3 style="margin-top:14px">Retirement savings by tax type</h3><table>

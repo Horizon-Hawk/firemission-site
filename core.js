@@ -172,6 +172,9 @@
     let hi = mapping ? mapping.headerRow || 0 : findHeader(rows);
     if (hi < 0) return { needsMapping: true, fileName, headers: rows[0] || [], sample: rows.slice(1, 6) };
     const hdr = rows[hi].map(H);
+    // this page's own "Save as CSV" export: reading it back would count every transaction twice
+    if (hdr.includes('counts as') && hdr.includes('merchant payer') && hdr.includes('income source'))
+      return { kind: 'unsupported', ownExport: true, fileName, txns: [], warnings: ['This is a FIRE Mission export, so it is left out (reading it back would count everything twice). Load the original bank and card files instead.'] };
     if (!mapping && hdr.includes('trans code') && hdr.includes('instrument')) return parseBrokerage(fileName, rows, hi, hdr);
     const col = mapping ? {
       date: mapping.date, desc: [mapping.desc], amount: mapping.amount ?? -1, debit: mapping.debit ?? -1, credit: mapping.credit ?? -1,
@@ -279,6 +282,7 @@
     if (/Your Social Security Statement/i.test(all.slice(0, 600))) return parseSSA(fileName, all);
     if (/Wage and Tax/i.test(all) && /W-2/.test(all) && /Federal income tax withheld/i.test(all)) return parseW2(fileName, all);
     if (/RETIREE ACCOUNT STATEMENT/i.test(all.slice(0, 400))) return parseRAS(fileName, all);
+    if (/LEAVE AND EARNINGS STATEMENT/i.test(all.slice(0, 400))) return parseLES(fileName, all);
     if (/Form 1099-R/i.test(all) && /Gross Distribution/i.test(all)) return parse1099R(fileName, all);
     const per = p1.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:to|-|–|through)\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
     const acc = p1.match(/([A-Za-z][A-Za-z ]{1,30}?)\s*Account\s*(?:#|Number|No\.?)\s*:?\s*([*xX•\d-]{4,})/);
@@ -407,6 +411,51 @@
       ytdTaxable, ytdWithheld, paidMonths, status: (all.match(/WITHHOLDING STATUS:\s*([A-Z ]+?)\s*\n/) || [])[1] || null,
       crdp: money((all.match(/\(CRDP\) AMOUNT IS\s*\$([\d,]+\.\d{2})/i) || [])[1] || ''), sbpCoverage: (all.match(/SBP COVERAGE TYPE:\s*(.+?)\s+ANNUITY/i) || [])[1] || null,
       sbpAnnuity: money((all.match(/WHICH IS\s*([\d,]+\.\d{2})/i) || [])[1] || ''), txns: [], warnings: [] };
+  }
+
+  /* Military Leave and Earnings Statement (DFAS Form 702, all branches). Read as a monthly pay stub so it feeds the
+     Pay tab and Taxes page: gross = total entitlements, taxable = federal wage for the period, plus the year to date
+     from the tax blocks. Allowances like BAH and BAS aren't taxed, which is the gap between the two. Name and SSN are
+     never kept. */
+  function parseLES(fileName, all) {
+    const A = '(-?\\s*[\\d,]*\\.\\d{2})', v = re => { const m = all.match(re); return m ? money(m[1].replace(/\s/g, '')) : null; };
+    const totEnt = v(new RegExp('\\+\\s*Tot Ent\\s+' + A)), totDed = v(new RegExp('-\\s*Tot Ded\\s+' + A)), totAllt = v(new RegExp('-\\s*Tot Allt\\s+' + A)) || 0;
+    const netAmt = v(new RegExp('=\\s*Net Amt\\s+' + A)), eom = v(new RegExp('=\\s*EOM Pay\\s+' + A)), mid = v(new RegExp('MID-MONTH-PAY\\s+' + A)) || 0;
+    if (totEnt == null || netAmt == null) return null;
+    const hdr = all.match(/\*{3,}\d{4}\s+(\S+)\s+(\d{6})\s+(\d{1,2})\s+\S+\s+([A-Z][A-Z ]*?)\s+\d{4}\s+(\d{1,2})-(\d{1,2})\s+([A-Z]{3})\s+(\d{2})/);
+    const MON = { JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06', JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12' };
+    const y = hdr ? '20' + hdr[8] : null, mo = hdr ? MON[hdr[7]] : null;
+    const begin = y && mo ? `${y}-${mo}-${String(hdr[5]).padStart(2, '0')}` : null, end = y && mo ? `${y}-${mo}-${String(hdr[6]).padStart(2, '0')}` : null;
+    // FED: wage period, wage YTD, M/S, exemptions, additional tax, tax YTD; FICA: wage period, soc wage YTD, soc tax YTD, med wage YTD, med tax YTD
+    const fed = all.match(/TAXES\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([MS])\s+(\d+)\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})/);
+    const fica = all.match(/TAXES\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})(?!\s+[MS]\b)/);
+    const state = all.match(/TAXES\s+([A-Z]{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([MSN])\s+(\d+)\s+([\d,]*\.\d{2})/);
+    const cur = re => v(new RegExp(re + '\\s+' + A));
+    const fedCur = cur('FEDERAL TAXES') || 0, socCur = cur('FICA-SOC SECURITY') || 0, medCur = cur('FICA-MEDICARE') || 0;
+    const stateCur = cur('STATE TAXES') || 0;
+    const tspTrad = cur('TRADITIONAL TSP') || 0, tspRoth = cur('ROTH TSP') || 0;
+    const tsp = all.match(/TOTALS\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})\s+([\d,]*\.\d{2})/);
+    const ytdEnt = v(/YTD ENTITLE\s+([\d,]*\.\d{2})/), ytdDed = v(/YTD DEDUCT\s+([\d,]*\.\d{2})/);
+    const m2 = x => x == null ? null : money(x);
+    const fedYtd = fed ? m2(fed[6]) : 0, socYtd = fica ? m2(fica[3]) : 0, medYtd = fica ? m2(fica[5]) : 0, stYtd = state ? m2(state[6]) : 0;
+    const tspYtd = tsp ? m2(tsp[1]) : 0, rothYtd = tsp ? m2(tsp[4]) : 0;
+    const allow = [...all.matchAll(/\b(BAH|BAS|OHA|COLA|FSH|FSA|HFP|IDP|CZTE|MIHA|CONUS COLA)\s+(-\s*)?([\d,]*\.\d{2})/g)]
+      .map(m => ({ name: m[1], amount: money(m[3]) * (m[2] ? -1 : 1) })).filter((x, i, a) => a.findIndex(z => z.name === x.name) === i);
+    const taxesYtd = r2((fedYtd || 0) + (socYtd || 0) + (medYtd || 0) + (stYtd || 0));
+    const otherYtd = ytdDed != null ? r2(ytdDed - taxesYtd - (tspYtd || 0)) : null;
+    const line = (name, current, ytd, kind) => ({ name, current, ytd, kind });
+    return { kind: 'paystub', les: true, format: 'Military LES', fileName, employer: 'U.S. ' + (hdr ? hdr[4].trim().replace(/\b\w+/g, w => w.charAt(0) + w.slice(1).toLowerCase()) : 'Military'),
+      payDate: end, begin, end, grade: hdr ? hdr[1] : null, yearsService: hdr ? +hdr[3] : null,
+      // Tot Ded includes the mid-month payment already sent to the bank: the month's take-home is mid-month + end-of-month
+      current: { gross: totEnt, taxable: fed ? m2(fed[1]) : null, taxes: r2(fedCur + socCur + medCur + stateCur), deductions: r2(totDed - mid), net: r2((eom != null ? eom : netAmt) + mid) },
+      ytd: ytdEnt != null ? { gross: ytdEnt, taxable: fed ? m2(fed[2]) : null, taxes: taxesYtd, deductions: ytdDed, net: ytdDed != null ? r2(ytdEnt - ytdDed) : null } : null,
+      taxes: [line('Federal income tax', fedCur, fedYtd, 'tax'), line('Social Security', socCur, socYtd, 'tax'), line('Medicare', medCur, medYtd, 'tax'), ...(state && (stYtd || stateCur) ? [line('State tax (' + state[1] + ')', stateCur, stYtd, 'tax')] : [])],
+      before: [...(tspYtd - rothYtd ? [line('Traditional TSP', tspTrad, r2(tspYtd - rothYtd), 'retire')] : [])],
+      after: [...(rothYtd ? [line('Roth TSP', tspRoth, rothYtd, 'retire')] : []), ...(otherYtd ? [line('SGLI, debts and other deductions', null, otherYtd, 'other')] : [])],
+      employerPaid: [], deposits: [{ type: 'EOM', last4: '', amount: eom != null ? eom : netAmt }, ...(mid ? [{ type: 'Mid-month', last4: '', amount: mid }] : [])],
+      allotments: totAllt, allowances: allow, taxFree: fed ? r2(totEnt - m2(fed[1])) : null,
+      w4: { status: fed ? (fed[3] === 'M' ? 'Married' : 'Single') : null, exemptions: fed ? +fed[4] : null, extra: fed ? m2(fed[5]) : null, dependents: null, multipleJobs: null },
+      txns: [], warnings: [] };
   }
 
   /* Form 1099-R (pensions, annuities, retirement plan payouts). Boxes are labelled by the IRS; the amount follows
@@ -1011,7 +1060,7 @@
       // the share of a year that the household window covers, for adding a yearly pace to Invested
       const winYears = wStart && wEnd ? (days(wStart, wEnd) + 1) / 365 : 1;
       out.push({ employer, stubs: list.map(s => ({ payDate: s.payDate, begin: s.begin, end: s.end, gross: s.current.gross, net: s.current.net, file: s.fileName })),
-        ytdThrough: last.end || last.payDate, ytdDays, scale, ytd: y, current: last.current, lines, found, w4: last.w4, payCount: list.length,
+        ytdThrough: last.end || last.payDate, ytdDays, scale, ytd: y, current: last.current, lines, found, w4: last.w4, payCount: list.length, les: !!last.les, allowances: last.allowances || [], grade: last.grade || null,
         stockYtd: r2(stockYtd), retireYtd: r2(retireYtd), matchYtd: r2(matchYtd), hsaYtd: r2(hsaYtd), fedWithheldYtd: fed,
         planLoaded: stmts.some(s => s.plan), stockInWindow: r2(stockYtd * scale * winYears),
         retireInWindow: r2(retireYtd * scale * winYears), matchInWindow: r2(matchYtd * scale * winYears), hsaInWindow: r2(hsaYtd * scale * winYears) });
