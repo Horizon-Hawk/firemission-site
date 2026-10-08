@@ -1793,10 +1793,11 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         const pmt = Math.round((num(P.homePrice) || 400000) * 0.0075);
         out += grp('Housing', chk('atHome', P.atHome, 'Live with parents')
           + (P.atHome ? f('Until age', inp('atHomeUntil', P.atHomeUntil, '22'), 'n') + f('Pay them a month', inp('atHomePay', P.atHomePay, '0'), 'm') : '')
-          + f('Rent a month', inp('rent', P.rent, '1450'), 'm') + f('Roommates until age', inp('roomTill', P.roomTill, 'none'), 'n')
-          + chk('buy', P.buy !== false, 'Buy a home')
+          + f('Rent a month', inp('rent', P.rent, '1450'), 'm') + f('Roommates until age', inp('roomTill', P.roomTill, 'none'), 'n'),
+          P.atHome ? `At home until ${num(P.atHomeUntil) || 22}${num(P.atHomePay) ? `, paying ${usd0(num(P.atHomePay))} a month` : ', rent-free'}, with the rent you'd otherwise pay invested; then rent, with roommates splitting it until ${num(P.roomTill) || 'the age you set'}.` : 'Renting from the start (a dorm while away at school); roommates split the rent until the age you set.');
+        out += grp('Buying a home', chk('buy', P.buy !== false, 'Buy a home')
           + (P.buy !== false ? f('At age', inp('home', P.home, '32'), 'n') + f('Home price', inp('homePrice', P.homePrice, '400000'), 'm') : ''),
-          (P.atHome ? `At home until ${num(P.atHomeUntil) || 22}${num(P.atHomePay) ? `, paying ${usd0(num(P.atHomePay))} a month` : ', rent-free'}, with the rent you'd otherwise pay invested; then rent. ` : 'Renting from the start (a dorm while away at school). ') + (P.buy !== false ? `About ${usd0(pmt)} a month with 10% down (mortgage, property tax and insurance). ${S0.boughtAt ? `Bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ', the earliest the down payment was saved and the payment fit 30% of household pay' : ''}.` : 'It never fit: 10% down saved and a payment under 30% of household pay.'}` : 'Renting the whole way; roommates split the rent until the age you set.'));
+          P.buy !== false ? `About ${usd0(pmt)} a month with 10% down (mortgage, property tax and insurance), plus upkeep. ${S0.boughtAt ? `Bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ', the earliest the down payment was saved and the payment fit 30% of household pay' : ''}.` : 'It never fit: 10% down saved and a payment under 30% of household pay.'}` : 'Renting the whole way.');
         out += grp('Car', f('Car payment a month', inp('carPay', P.carPay, '0'), 'm') + f('Insurance a month', inp('carIns', P.carIns, '150'), 'm'),
           num(P.carPay) + num(P.carIns) ? 'Plus about $200 a month for gas and upkeep. A used car paid off: payment 0.' : 'No car: about $120 a month for transit.');
         out += grp('Family', chk('marry', P.marry !== false, 'Get married')
