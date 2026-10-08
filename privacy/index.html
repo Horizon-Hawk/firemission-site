@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How FIRE Mission Keeps Your Files Private</title>
+<meta name="description" content="FIRE Mission reads your statements inside your browser. Nothing is uploaded, there is no account, and the code is public. Here is how it works and how to check it yourself.">
+<link rel="canonical" href="https://firemission.app/privacy/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#1d1f1c">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="FIRE Mission">
+<meta property="og:title" content="How FIRE Mission Keeps Your Files Private">
+<meta property="og:description" content="FIRE Mission reads your statements inside your browser. Nothing is uploaded, there is no account, and the code is public. Here is how it works and how to check it yourself.">
+<meta property="og:url" content="https://firemission.app/privacy/">
+<meta property="og:image" content="https://firemission.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How FIRE Mission Keeps Your Files Private">
+<meta name="twitter:description" content="FIRE Mission reads your statements inside your browser. Nothing is uploaded, there is no account, and the code is public. Here is how it works and how to check it yourself.">
+<meta name="twitter:image" content="https://firemission.app/og.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+:root { --bg: #f3f1ea; --surface: #fbfaf6; --ink: #1d1f1c; --muted: #5a5f57; --rule: #dcd8cc; --accent: #b9471a; --in: #2f6b45; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #171916; --surface: #1f221e; --ink: #ecebe4; --muted: #a7aba2; --rule: #343832; --accent: #f0814f; --in: #7cc596; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 'IBM Plex Sans', system-ui, sans-serif; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 28px 18px 60px; }
+header a.brand { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: .02em; color: var(--ink); text-decoration: none; }
+header a.brand span { color: var(--accent); }
+nav { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 28px; font-size: 15px; }
+nav a { color: var(--muted); }
+h1 { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-size: clamp(34px, 6vw, 48px); line-height: 1.05; margin: 0 0 14px; text-wrap: balance; }
+h2 { font-family: 'Saira Condensed', 'Arial Narrow', sans-serif; font-size: 26px; margin: 34px 0 8px; }
+.lede { font-size: 20px; color: var(--ink); }
+.cta { display: inline-block; margin: 18px 0 6px; background: var(--ink); color: var(--bg); padding: 12px 22px; border-radius: 8px; font-weight: 600; text-decoration: none; }
+.note { font-size: 14px; color: var(--muted); }
+a { color: var(--accent); }
+ul { padding-left: 22px; } li { margin: 6px 0; }
+details { border-top: 1px solid var(--rule); padding: 10px 0; } summary { cursor: pointer; font-weight: 600; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--muted); }
+</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "name": "How FIRE Mission Keeps Your Files Private", "description": "FIRE Mission reads your statements inside your browser. Nothing is uploaded, there is no account, and the code is public. Here is how it works and how to check it yourself.", "url": "https://firemission.app/privacy/", "isPartOf": {"@type": "WebSite", "name": "FIRE Mission", "url": "https://firemission.app/"}}</script>
+</head>
+<body><div class="wrap">
+<header><a class="brand" href="/">FIRE <span>MISSION</span></a><nav aria-label="Pages"><a href="/">FIRE Mission</a> <a href="/fire-calculator/">FIRE calculator</a> <a href="/budget-from-bank-statements/">Budget from statements</a> <a href="/starting-out/">Starting out</a> <a href="/military-les-and-retirement/">Military pay</a> <a href="/privacy/" aria-current="page">Privacy</a></nav></header>
+<main>
+<h1>Your files never leave your computer</h1>
+<p class="lede">Money files are sensitive. FIRE Mission is built so they never have to be shared with anyone, including us.</p>
+<a class="cta" href="/">Open FIRE Mission</a>
+<p class="note">Free, no account. Your files are read in your browser and never uploaded.</p>
+<h2>Read here, not uploaded</h2><p>When you drop a statement, the code in the page opens it in your browser, the same way a PDF viewer does. There's no account, no sign-in and no server that receives files: the site is only the page itself.</p><h2>Gone when you close the tab</h2><p>Transactions and statements aren't saved anywhere. The only thing kept is your answers (who a payer is, the settings you typed) in your own browser, so you don't repeat them next month. One click forgets them.</p><h2>Check it yourself</h2><p>Once the page has loaded, turn off Wi-Fi and drop your files: it still works, because nothing goes out. Or open your browser's developer tools, choose Network, and watch while you add a file. The code is public on <a href="https://github.com/Horizon-Hawk/firemission-site">GitHub</a>.</p><h2>What the page does load</h2><p>When it opens, the page downloads its fonts (Google Fonts) and its PDF reader (cdnjs), like any website loading its parts. Those downloads never include your files or numbers. Starting Out share links carry the choices after the #, which browsers never send to the site.</p>
+
+</main>
+<footer>FIRE Mission is a free tool for seeing your own numbers, not financial, tax or investment advice. <a href="/privacy/">How privacy works</a>.</footer>
+</div></body>
+</html>
