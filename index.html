@@ -1594,8 +1594,14 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   // VA disability compensation, veteran alone, per month (2025 rates, rounded); tax-free
   const VA_RATE = { 0: 0, 10: 175, 30: 552, 50: 1102, 70: 1759, 100: 3831 };
-  function startSim(P, noDetours) {
-    const job = JOBS.find(j => j[0] === P.job) || JOBS[6], rk = P.route || job[2], route = ROUTES[rk] || ROUTES.work, area = { pay: 1, rent: P.rent === '' ? 1450 : num(P.rent), home: num(P.homePrice) || 400000 };
+  // Social Security at 67 from a list of yearly earnings: the 35 best years (capped at the wage base), 2025 bend points
+  function ssPIA(earn) {
+    const top = earn.map(e => Math.min(e, 184500)).sort((x, y) => y - x).slice(0, 35), aime = top.reduce((x, e) => x + e, 0) / 420;
+    return 0.9 * Math.min(aime, 1226) + 0.32 * Math.max(0, Math.min(aime, 7391) - 1226) + 0.15 * Math.max(0, aime - 7391);
+  }
+  function startSim(P, noDetours, opt) {
+    opt = opt || {};
+    const job = JOBS.find(j => j[0] === P.job) || JOBS[6], rk = P.route || job[2], route = ROUTES[rk] || ROUTES.work, area = { pay: opt.payX || 1, rent: P.rent === '' ? 1450 : num(P.rent), home: num(P.homePrice) || 400000 };
     const det = noDetours ? {} : P.det || {}, age0 = Math.max(14, Math.min(60, num(P.age) || 18));
     const dropout = det.dropout && route[1] >= 2 ? num(det.dropout.age) || age0 + 2 : null;
     const yearsSchool = dropout ? Math.max(0, Math.min(route[1], dropout - age0)) : route[1];
@@ -1612,7 +1618,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const milPay = y => curve(med, 0.8, y, 1.7);
     const basePayEnd = 0.65 * milPay(svcYears), pensionYr = mil && svcYears >= 20 ? 0.02 * svcYears * basePayEnd : 0;
     const vaYr = mil ? (VA_RATE[num(P.va)] || 0) * 12 : 0;
-    const r = 0.05, loanR = 0.035, cardR = 0.19, END = 67;
+    const r = opt.ret != null ? opt.ret : 0.05, loanR = 0.035, cardR = 0.19, END = 67;
+    const extraMo = num(P.extraMo) + (opt.extra || 0), earnings = [], spouseEarn = [];
+    let wedAt = null;
     let inv = num(P.saved), loan = 0, card = 0, loanPmt = 0, homeBal = 0, homePrice = 0, payMult = 1, married = false;
     let fiAge = null, loanFree = null, boughtAt = null, shortAt = null, shortBy = 0;
     const rows = [], recurring = [];
@@ -1635,10 +1643,21 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       if (jailed) gross = 0;
       const pension = mil && a >= svcEnd ? pensionYr : 0, va = mil && a >= svcEnd ? vaYr : 0;
       const giStipend = school2 && gi && a < svcEnd + 4 ? 24000 : 0;   // Post-9/11 GI Bill housing allowance, about $2,000 a month, tax-free
-      if (P.marry !== false && P.wedding && a === num(P.wedding)) { married = true; inv -= num(P.weddingCost); }
-      // a spouse's pay counts from the wedding (until a divorce); taxes are then joint
-      const spouse = married ? num(P.spousePay) : 0;
-      const net = (gross + spouse + pension ? takeHome(gross + spouse + pension, married, serving) : 0) + va + giStipend;
+      if (P.marry !== false && P.wedding && a === num(P.wedding)) { married = true; wedAt = a; inv -= num(P.weddingCost); }
+      // a spouse's pay counts from the wedding (until a divorce), rising about 25% over 20 years; taxes are then joint
+      const spouse = married ? num(P.spousePay) * (1 + 0.25 * Math.min(1, (a - wedAt) / 20)) : 0;
+      earnings.push(gross); if (spouse) spouseEarn.push(spouse);
+      // saving: the share of take-home you set, plus any extra a month once working. Up to the 401(k) limit it goes in
+      // before tax, and the tax that saves stays invested
+      const G = gross + spouse + pension, net0 = G ? takeHome(G, married, serving) : 0;
+      let save = net0 > 0 ? net0 * num(P.save) / 100 + (!school ? extraMo * 12 : 0) : 0;
+      const pretax = !serving && gross > 0 ? Math.min(save, 24500) : 0;
+      const taxSaved = pretax ? takeHome(G - pretax, married, false) + pretax - net0 : 0;
+      save += taxSaved;
+      // child tax credit: about $2,200 a year for each child under 17
+      let under17 = 0; for (let i = 0; i < num(P.kids); i++) { const born = (num(P.kidAge) || 30) + i * 2; if (a >= born && a < born + 17) under17++; }
+      const ctc = under17 * 2200;
+      const net = net0 + taxSaved + va + giStipend + ctc;
       // school costs: help from family, scholarships or the GI Bill, the rest borrowed
       if (school1) loan += route[2] * (1 - num(P.help) / 100);
       if (school2 && !(gi && a < svcEnd + 4)) loan += route2[2] * (1 - num(P.help) / 100);
@@ -1650,8 +1669,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       const buyAt = P.buy !== false ? num(P.home) : 0;
       if (buyAt && !homePrice && a >= buyAt && inv >= area.home * 0.1 && area.home * 0.0075 * 12 <= household * 0.3) { homePrice = area.home; inv -= homePrice * 0.1; homeBal = homePrice * 0.9; boughtAt = a; }
       let housing;
-      if (homePrice) housing = homePrice * (a - boughtAt < 30 ? 0.0075 : 0.0015) * 12; // after 30 years only tax and insurance
-      else housing = area.rent * (kidsNow ? 1.3 : 1) * (a < num(P.roomTill) && !married && !kidsNow ? 0.6 : 1) * 12;
+      if (homePrice) housing = homePrice * (a - boughtAt < 30 ? 0.0075 : 0.0015) * 12 + homePrice * 0.01; // after 30 years only tax and insurance; upkeep about 1% a year
+      else housing = area.rent * (a < num(P.roomTill) && !married && !kidsNow ? 0.6 : 1) * 12;
       if (school1) housing = 0;              // at home or in a dorm (room and board are in the school cost)
       // a car: the payment and insurance typed in, plus about $200 a month for gas and upkeep; no car = about $120 of transit
       const carMo = num(P.carPay) + num(P.carIns), car = (carMo ? carMo + 200 : 120) * 12;
@@ -1661,7 +1680,6 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       // paying the student loan back over 10 years
       let lp = 0; if (!school && loan > 0) { lp = Math.min(loan * (1 + loanR), loanPmt); loan = loan * (1 + loanR) - lp; if (loan < 1) { loan = 0; loanPmt = 0; if (loanFree == null) loanFree = a; } }
       if (homeBal > 0) { const hp = homePrice * 0.9 * 0.0042 * 12; homeBal = Math.max(0, homeBal * 1.03 - hp); }
-      let save = net > 0 ? net * num(P.save) / 100 : 0;
       // a 401(k) match from a civilian employer; in uniform, the Thrift Savings Plan matches up to 5% of base pay
       const matchPct = P.matchPct != null ? num(P.matchPct) : P.match === false ? 0 : 4;
       const match = serving ? 0.05 * 0.65 * gross : !school && gross > 0 ? gross * matchPct / 100 : 0;
@@ -1675,12 +1693,20 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       inv = inv * (1 + r) + save + match + gift;
       if (inv < 0) { card -= inv; inv = 0; }
       const nw = inv + (homePrice ? homePrice - homeBal : 0) - loan - card;
-      // could stop working: investments (at 4% a year) plus a pension and VA pay cover the costs
-      if (fiAge == null && !school && a > careerAt && inv * 0.04 + (a >= svcEnd ? (pension ? takeHome(pension, married, false) : 0) + va : 0) >= living) fiAge = a;
-      rows.push({ age: a, gross, net, living, save, match, loan, card, inv, nw, school, serving, detourCost, lp, housing, car, kidsNow, pension, va });
+      // could stop working now: investments carry the gap until Social Security at 67 (figured on the earnings so far),
+      // then the smaller gap after it (kids grown) at a 4% withdrawal rate; pension and VA pay count too
+      if (fiAge == null && !school && a > careerAt) {
+        const lifeInc = (a >= svcEnd && pension ? takeHome(pension, married, false) : 0) + (a >= svcEnd ? va : 0);
+        const ss = (ssPIA(earnings) + (married && spouseEarn.length ? ssPIA(spouseEarn.concat(Array(Math.max(0, 35 - spouseEarn.length)).fill(num(P.spousePay)))) : 0)) * 12;
+        const pi = homePrice && a - boughtAt < 30 ? homePrice * 0.006 * 12 : 0, livingFI = Math.max(living, net - save - lp - detourCost) - pi;
+        const n = 67 - a, gapPre = Math.max(0, livingFI - lifeInc), gapPost = Math.max(0, livingFI - kidsNow * 18000 - lifeInc - ss * 0.9);
+        const annuity = r ? (1 - Math.pow(1 + r, -n)) / r : n;
+        if (inv >= homeBal + gapPre * annuity + gapPost * 25 / Math.pow(1 + r, n)) fiAge = a;
+      }
+      rows.push({ age: a, gross, net, living, save, ss: ssPIA(earnings), homeBal, match, loan, card, inv, nw, school, serving, detourCost, lp, housing, car, kidsNow, pension, va });
     }
     if (loanFree == null && rows.every(x => x.loan === 0)) loanFree = 0;
-    return { rows, fiAge, loanFree, boughtAt, shortAt, shortBy, job, route, rk, careerAt, med, area, mil, svcYears, svcEnd, job2, route2, career2At, pensionYr, vaYr, gi };
+    return { rows, fiAge, loanFree, boughtAt, shortAt, shortBy, job, route, rk, careerAt, med, area, mil, svcYears, svcEnd, job2, route2, career2At, pensionYr, vaYr, gi, ss67: ssPIA(earnings) };
   }
 
   const scnEncode = st => btoa(unescape(encodeURIComponent(JSON.stringify(st)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1698,8 +1724,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
   function scenarioData() { const sp = SP(); return { kind: 'fire-mission-scenario', v: 1, compare: sp.compare, A: sp.A, B: sp.compare ? sp.B : null }; }
 
-  function startChart(series, marks) {
-    const all = series.flatMap(s => s.rows), ages = series[0].rows.map(x => x.age), a0 = ages[0], a1 = ages[ages.length - 1];
+  function startChart(series, marks, band) {
+    const all = series.flatMap(s => s.rows).concat(band ? band.hi.concat(band.lo) : []), ages = series[0].rows.map(x => x.age), a0 = ages[0], a1 = ages[ages.length - 1];
     const maxV = Math.max(1, ...all.map(x => x.nw)), minV = Math.min(0, ...all.map(x => x.nw));
     const W = 760, Hh = 260, L = 64, Bm = 26, T = 12;
     const X = a => L + (W - L - 12) * (a - a0) / Math.max(1, a1 - a0), Y = v => T + (Hh - T - Bm) * (maxV - v) / (maxV - minV);
@@ -1710,14 +1736,16 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const ticks = ages.filter(a => a % 5 === 0).map(a => `<text x="${X(a)}" y="${Hh - 8}" text-anchor="middle">${a}</text>`).join('');
     const lines = series.map(s => `<polyline fill="none" stroke="${s.color}" stroke-width="${s.w || 2.5}"${s.dash ? ` stroke-dasharray="${s.dash}"` : ''} points="${s.rows.map(x => `${X(x.age)},${Y(x.nw)}`).join(' ')}"/>`).join('');
     const dots = (marks || []).map(m => `<circle cx="${X(m.age)}" cy="${Y(m.v)}" r="4.5" fill="${m.color}"/>`).join('');
-    return `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Net worth by age"><g class="g">${g}</g>${ticks}${lines}${dots}</svg>`;
+    const area = band ? `<polygon fill="var(--in)" opacity=".13" points="${band.hi.map(x => `${X(x.age)},${Y(x.nw)}`).concat(band.lo.slice().reverse().map(x => `${X(x.age)},${Y(x.nw)}`)).join(' ')}"/>` : '';
+    return `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Net worth by age"><g class="g">${g}</g>${ticks}${area}${lines}${dots}</svg>`;
   }
 
   function renderStart() {
     const el = $('startPage');
     if (document.body.dataset.page !== 'start') return;
     const sp = SP(), cur = sp.compare && sp.cur === 'B' ? 'B' : 'A', P = sp[cur];
-    const A = startSim(sp.A), Bp = sp.compare && sp.B ? startSim(sp.B) : null, Aclean = Object.keys(sp.A.det || {}).length ? startSim(sp.A, true) : null;
+    const A = startSim(sp.A), Alo = startSim(sp.A, false, { payX: 0.8, ret: 0.03 }), Ahi = startSim(sp.A, false, { payX: 1.25, ret: 0.07 });
+    const Bp = sp.compare && sp.B ? startSim(sp.B) : null, Aclean = Object.keys(sp.A.det || {}).length ? startSim(sp.A, true) : null;
     const at = (s, age) => (s.rows.find(x => x.age === age) || s.rows[s.rows.length - 1]).nw;
     const sel = (k, opts, v) => `<select data-st="${k}">${opts.map(([val, lab]) => `<option value="${esc(val)}"${String(v) === String(val) ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
     const inp = (k, v, ph, w) => `<input data-st="${k}" inputmode="numeric" value="${esc(v)}" placeholder="${esc(ph || '')}" style="width:${w || 80}px">`;
@@ -1725,9 +1753,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const S0 = cur === 'A' ? A : Bp;
 
     let h = `<div class="panel"><div class="fire-head">
-      <div><span class="label">At 30</span><span class="big ${at(A, 30) < 0 ? 'out' : ''}">${usd0(at(A, 30))}</span><span class="sub">what you own minus what you owe${Bp ? ` · second path ${usd0(at(Bp, 30))}` : ''}</span></div>
-      <div><span class="label">At 45</span><span class="big">${usd0(at(A, 45))}</span><span class="sub">${A.loanFree ? `student loans gone at ${A.loanFree}` : 'no student loans'}${Bp ? ` · second path ${usd0(at(Bp, 45))}` : ''}</span></div>
-      <div><span class="label">Could stop working at</span><span class="big">${A.fiAge != null ? A.fiAge : 'not by 67'}</span><span class="sub">when investments could cover your costs${Bp ? ` · second path ${Bp.fiAge != null ? Bp.fiAge : 'not by 67'}` : ''}</span></div>
+      <div><span class="label">At 30</span><span class="big ${at(A, 30) < 0 ? 'out' : ''}">${usd0(at(A, 30))}</span><span class="sub">what you own minus what you owe${A.loanFree ? `; student loans gone at ${A.loanFree}` : ''}${Bp ? ` · second path ${usd0(at(Bp, 30))}` : ''}</span></div>
+      <div><span class="label">At 45</span><span class="big">${usd0(at(A, 45))}</span><span class="sub">range ${usd0(at(Alo, 45))} to ${usd0(at(Ahi, 45))}${Bp ? ` · second path ${usd0(at(Bp, 45))}` : ''}</span></div>
+      <div><span class="label">Could stop working at</span><span class="big">${A.fiAge != null ? A.fiAge : 'not by 67'}</span><span class="sub">range ${Ahi.fiAge != null ? Ahi.fiAge : 'not by 67'} to ${Alo.fiAge != null ? Alo.fiAge : 'not by 67'}; counts Social Security from 67${Bp ? ` · second path ${Bp.fiAge != null ? Bp.fiAge : 'not by 67'}` : ''}</span></div>
     </div></div>
     ${A.shortAt != null ? `<p class="estimate" style="background:var(--accent-soft);color:var(--ink)">${sp.compare ? 'The first path' : 'This path'} costs more than it brings in from age ${A.shortAt}, by up to ${usd0(A.shortBy)} a month; the gap goes on a credit card at 19%, until credit runs out. Try roommates longer, a used car, a cheaper area, fewer or later kids, or a later home.</p>` : ''}
     ${Bp && Bp.shortAt != null ? `<p class="estimate" style="background:var(--accent-soft);color:var(--ink)">The second path costs more than it brings in from age ${Bp.shortAt}, by up to ${usd0(Bp.shortBy)} a month.</p>` : ''}
@@ -1767,8 +1795,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
           + (P.marry !== false ? f('At age', inp('wedding', P.wedding, '28'), 'n') + f('Wedding cost', inp('weddingCost', P.weddingCost, '0'), 'm') + f("Spouse's pay a year", inp('spousePay', P.spousePay, '0'), 'm') : '')
           + f('Kids', inp('kids', P.kids, '0'), 'n') + (num(P.kids) ? f('First at age', inp('kidAge', P.kidAge, '30'), 'n') : ''),
           num(P.kids) ? 'Each child about $1,500 a month until 18 (USDA estimate, updated for inflation).' : '');
-        out += grp('Saving', f('Save of take-home (%)', inp('save', P.save, '10'), 'n') + f('Employer match (% of pay)', inp('matchPct', P.matchPct != null ? P.matchPct : P.match === false ? 0 : 4, '4'), 'n'),
-          'The match is money your employer adds to a 401(k) when you save into it, often 3-6% of pay; 0 if there is none. In uniform, the Thrift Savings Plan matches up to 5% of base pay.');
+        out += grp('Saving', f('Save of take-home (%)', inp('save', P.save, '10'), 'n') + f('Extra invested a month', inp('extraMo', P.extraMo, '0'), 'm') + f('Employer match (% of pay)', inp('matchPct', P.matchPct != null ? P.matchPct : P.match === false ? 0 : 4, '4'), 'n'),
+          'Saving goes into a 401(k) before tax, up to the yearly limit. The match is money your employer adds when you save into it, often 3-6% of pay; 0 if there is none. In uniform, the Thrift Savings Plan matches up to 5% of base pay.');
         return out;
       })()}</div></div>`;
 
@@ -1781,9 +1809,21 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     if (Aclean) series.unshift({ rows: Aclean.rows, color: 'var(--muted)', dash: '4 4', w: 2 });
     if (Bp) series.push({ rows: Bp.rows, color: 'var(--accent)' });
     h += `<div class="card chart"><h3>What you own minus what you owe, by age</h3>
-      <div class="legend" style="flex-wrap:wrap"><span><i style="background:var(--in)"></i>${sp.compare ? 'First path' : 'Your path'}</span>${Aclean ? '<span><i style="background:var(--muted)"></i>Same path without the detours</span>' : ''}${Bp ? '<span><i style="background:var(--accent)"></i>Second path</span>' : ''}</div>
-      ${startChart(series, [A.fiAge != null ? { age: A.fiAge, v: at(A, A.fiAge), color: 'var(--in)' } : null, Bp && Bp.fiAge != null ? { age: Bp.fiAge, v: at(Bp, Bp.fiAge), color: 'var(--accent)' } : null].filter(Boolean))}
-      <p class="muted" style="margin:6px 0 0;font-size:13px">Savings, retirement accounts and home equity, less student loans and credit card debt. Investments grow 5% a year after inflation. A dot marks when investments could cover your costs.${Aclean ? ` The detours cost about <b>${usd0(at(Aclean, 65) - at(A, 65))}</b> by 65.` : ''}</p></div>`;
+      <div class="legend" style="flex-wrap:wrap"><span><i style="background:var(--in)"></i>${sp.compare ? 'First path' : 'Your path'}</span><span><i style="background:var(--in);opacity:.25"></i>Range: lower pay and 3% returns to higher pay and 7%</span>${Aclean ? '<span><i style="background:var(--muted)"></i>Same path without the detours</span>' : ''}${Bp ? '<span><i style="background:var(--accent)"></i>Second path</span>' : ''}</div>
+      ${startChart(series, [A.fiAge != null ? { age: A.fiAge, v: at(A, A.fiAge), color: 'var(--in)' } : null, Bp && Bp.fiAge != null ? { age: Bp.fiAge, v: at(Bp, Bp.fiAge), color: 'var(--accent)' } : null].filter(Boolean), { lo: Alo.rows, hi: Ahi.rows })}
+      <p class="muted" style="margin:6px 0 0;font-size:13px">The line is median pay with 5% returns after inflation; the shaded range runs from pay at about the 25th percentile with 3% returns to the 75th percentile with 7%. Savings, retirement accounts and home equity, less student loans and credit card debt. A dot marks when investments could cover your costs.${Aclean ? ` The detours cost about <b>${usd0(at(Aclean, 65) - at(A, 65))}</b> by 65.` : ''}</p></div>`;
+
+    // saving more: the same path with more invested each month once working
+    {
+      const base = num(P.extraMo), steps = [0, 100, 250, 500];
+      const runs = steps.map(x => ({ x, s: startSim(P, false, { extra: x }) }));
+      const shade = i => i === 0 ? 'var(--muted)' : `color-mix(in srgb, var(--in) ${[0, 45, 70, 100][i]}%, var(--surface))`;
+      h += `<div class="card chart"><h3>Investing more</h3><p>The same path with more invested each month once you're working${base ? ` (on top of the ${usd0(base)} you set)` : ''}. Type your own amount under Saving.</p>
+        <div class="legend" style="flex-wrap:wrap">${runs.map((r, i) => `<span><i style="background:${shade(i)}"></i>${r.x ? '+' + usd0(r.x) + '/mo' : 'As set'}</span>`).join('')}</div>
+        ${startChart(runs.map((r, i) => ({ rows: r.s.rows, color: shade(i), w: i === 3 ? 2.5 : 2, dash: i === 0 ? '5 4' : '' })), [])}
+        <div class="tablewrap"><table><tr><th>Invest each month</th><th class="r">Put in by 67</th><th class="r">At 45</th><th class="r">At 67</th><th class="r">Could stop working at</th></tr>
+        ${runs.map(r => { const s0 = r.s, add = r.x * 12 * Math.max(0, 67 - (s0.rows.find(x => !x.school) || s0.rows[0]).age); return `<tr><td>${r.x ? '+' + usd0(r.x) : 'As set'}</td><td class="r num">${r.x ? usd0(add) : '—'}</td><td class="r num">${usd0(at(s0, 45))}</td><td class="r num">${usd0(at(s0, 67))}</td><td class="r num">${s0.fiAge != null ? s0.fiAge : 'not by 67'}</td></tr>`; }).join('')}</table></div></div>`;
+    }
 
     // the first full month of work
     const first = S0.rows.find(x => !x.school && x.gross > 0) || S0.rows[0];
@@ -1811,7 +1851,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const habit = (perDay) => fv(Math.max(18, num(P.age) || 18), perDay * 365 / 12);
     h += `<div class="card tablewrap"><h3>Small habits, big numbers</h3><p>A daily cost, invested instead from age ${Math.max(18, num(P.age) || 18)} to 65:</p><table>
       ${[[6, 'Coffee or energy drink'], [15, 'Eating out at lunch'], [9, 'A pack of cigarettes'], [3, 'An app or streaming add-on']].map(([d, l]) => `<tr><td>${l}<div class="muted" style="font-size:12px">${usd0(d)} a day, ${usd0(d * 365)} a year</div></td><td class="r num">${usd0(habit(d))}</td></tr>`).join('')}</table></div>`;
-    h += `<p class="muted" style="font-size:13px">Pay: BLS Occupational Employment and Wage Statistics, U.S. medians (2023-24), rounded. School costs: College Board, Trends in College Pricing (2024-25), rounded. Taxes: 2026 federal brackets, Social Security and Medicare, about 4% state. Kids: about $1,500 a month each (USDA estimate, updated for inflation). A tool for exploring, not financial advice.</p>`;
+    h += `<p class="muted" style="font-size:13px">Pay: BLS Occupational Employment and Wage Statistics, U.S. medians (2023-24), rounded. School costs: College Board, Trends in College Pricing (2024-25), rounded. Taxes: 2026 federal brackets, Social Security and Medicare, about 4% state, the child tax credit, and 401(k) saving before tax. Social Security: estimated from the path's own earnings (2025 formula), from 67. Homes: no gain in value after inflation; upkeep about 1% a year. Kids: about $1,500 a month each (USDA estimate, updated for inflation). A tool for exploring, not financial advice.</p>`;
     el.innerHTML = h;
   }
 
