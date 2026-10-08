@@ -1169,13 +1169,14 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const bills = (R ? R.recurring : []).filter(r => r.active && ['Housing', 'Loans'].includes(r.category) && !f.catOff[r.category])
       .map(r => {
         const m = ((R && R.mortgages) || []).find(x => (x.payoffScheduled || x.payoffPace) && r.name.toLowerCase().includes(x.lender.split(' ')[0].toLowerCase()));
-        return { key: r.key, name: r.name, monthly: r.perYear / 12, end: f.ends[r.key] || '', auto: m ? m.payoffScheduled || m.payoffPace : null, mortgage: m || null };
+        const monthly = r.perYear / 12, stops = m && m.piPayment ? Math.min(monthly, m.piPayment) : monthly;
+        return { key: r.key, name: r.name, monthly, stops, end: f.ends[r.key] || '', auto: m ? m.payoffScheduled || m.payoffPace : null, mortgage: m || null };
       });
     const target = f.spendMode === 'target' && num(f.target) > 0;
     const allowance = num(f.irrAllowance);
     const base = target ? num(f.target) : cats.filter(c => c.on).reduce((x, c) => x + c.monthly, 0) + allowance;
     const endOf = b => num(b.end) || b.auto || 0;
-    const spendIn = y => target ? base : Math.max(0, base - bills.filter(b => endOf(b) && endOf(b) <= y).reduce((x, b) => x + b.monthly, 0));
+    const spendIn = y => target ? base : Math.max(0, base - bills.filter(b => endOf(b) && endOf(b) <= y).reduce((x, b) => x + b.stops, 0));
 
     // income that lasts for life
     const rasP = R && R.ras, prem = rasP ? rasP.allot.filter(a => a.type === 'Insurance').reduce((x, a) => x + a.amount, 0) : 0;
@@ -1350,7 +1351,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       </table><div class="foot" style="margin-top:10px"><button class="btn" id="addAcct" type="button">Add an account</button>${QUICK.map(([n, k], i) => `<button class="linkbtn" data-quick="${i}" type="button">+ ${esc(n)}</button>`).join("")}</div>${m.accts.some(a => a.fromFile) ? `<p class="muted" style="margin:8px 0 0;font-size:12px">Change covers the first to the last statement loaded.${m.accts.some(a => a.fromFile && a.market == null) ? ' — means that account\'s activity export is needed to split the change into what you added and what the market did.' : ''}</p>` : ''}</div>`;
 
     // retirement spending
-    const billRows = m.bills.map(b => `<div class="toggle"><span>${esc(b.name)} <span class="muted">${usd0(b.monthly)}/mo</span></span><label class="amt" style="font-size:13px;color:var(--muted)">paid off in <input data-end="${esc(b.key)}" inputmode="numeric" value="${esc(b.end)}" placeholder="${b.auto ? b.auto + ' *' : 'year'}" title="${b.auto ? 'From the 1098: paid off around ' + b.auto + ' on the regular payment' : ''}" style="width:78px;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label></div>`).join('');
+    const billRows = m.bills.map(b => `<div class="toggle"><span>${esc(b.name)} <span class="muted">${usd0(b.monthly)}/mo</span>${b.stops < b.monthly - 1 ? `<div class="muted" style="font-size:12px">${usd0(b.stops)} ends; ${usd0(b.monthly - b.stops)} tax &amp; insurance keeps going</div>` : ''}</span><label class="amt" style="font-size:13px;color:var(--muted)">paid off in <input data-end="${esc(b.key)}" inputmode="numeric" value="${esc(b.end)}" placeholder="${b.auto ? b.auto + ' *' : 'year'}" title="${b.auto ? 'From the 1098: paid off around ' + b.auto + ' on the regular payment' : ''}" style="width:78px;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label></div>`).join('');
     h += `<div class="split"><div class="card"><h3>Spending in retirement</h3>
       <p>You spent about <b>${usd0(m.actual)}</b> a month${S.result ? '' : ' (load statements on the Spending page)'}. Without irregular purchases, a regular month is <b>${usd0(m.regular)}</b>.</p>
       ${m.irregular.length ? `<details${m.irregular.length <= 8 ? ' open' : ''}><summary style="cursor:pointer"><b>${m.irregular.length} irregular purchases</b>, ${usd0(m.irrTotal)} in all. Tick any that will keep happening.</summary>
