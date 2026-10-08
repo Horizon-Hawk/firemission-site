@@ -235,6 +235,7 @@ body[data-page="start"] .sources, body[data-page="start"] #trust { display: none
 .det b { display: block; font-size: 14px; }
 .det .muted { display: block; font-size: 12px; line-height: 1.35; }
 .det input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); }
+.start-acts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
 .start-share { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 12px 0 0; }
 .start-share .btn { font: inherit; font-weight: 600; font-size: 14px; padding: 6px 12px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
 .start-share .btn:hover { border-color: var(--accent); }
@@ -1580,6 +1581,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   ];
   const AREA = { low: { rent: 1000, home: 250000, pay: 0.9, label: 'Lower-cost area' }, avg: { rent: 1450, home: 400000, pay: 1, label: 'Average area' }, high: { rent: 2300, home: 750000, pay: 1.2, label: 'Higher-cost area' } };
   const startDefaults = () => ({ age: 18, saved: 0, giftMo: '', giftUntil: '', job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, buy: true, homePrice: 400000, rent: 1450, atHome: true, atHomeUntil: '22', atHomePay: '0', carPay: 0, carIns: 150, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, matchPct: '4', milYears: 4, second: '', gi: true, va: 0, det: {} });
+  const startBlank = P => Object.assign(startDefaults(), { age: P.age, job: P.job, route: P.route, rent: P.rent, help: '0',
+    atHome: false, roomTill: '', buy: false, carPay: '0', carIns: '0', marry: false, kids: '0', save: '0', matchPct: '0', extraMo: '', giftMo: '', det: {} });
   const SP = () => { const p = S.start = Object.assign({ cur: 'A', compare: false }, S.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
 
   // income tax, today's dollars: 2026 federal brackets (single, or joint once married on one income), Social Security
@@ -1774,7 +1777,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
     // the path
     h += `<div class="card"><div class="start-tabs">${sp.compare ? ['A', 'B'].map(k => `<button type="button" data-stcur="${k}" aria-pressed="${cur === k}">${k === 'A' ? 'First path' : 'Second path'}</button>`).join('') : '<h3 style="margin:0">Your path</h3>'}
-        <label class="chk"><input type="checkbox" data-stcompare${sp.compare ? ' checked' : ''}> Compare with a second path</label></div>
+        <span class="start-acts"><button type="button" class="linkbtn" data-stclear="blank" title="Keep the job and rent; turn off everything else">Clear assumptions</button><button type="button" class="linkbtn" data-stclear="defaults">Reset to defaults</button>
+        <label class="chk"><input type="checkbox" data-stcompare${sp.compare ? ' checked' : ''}> Compare with a second path</label></span></div>
       <div class="spath">
       ${(() => {
         const startPay = job[1] * ((P.route || job[2]) === 'flight' ? 0.4 : (P.route || job[2]) === 'appr' ? 0.85 : /mil|rotc/.test(P.route || job[2]) ? 0.8 : 0.7);
@@ -2059,6 +2063,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       else show();
       return;
     }
+    const scl = ev.target.closest('[data-stclear]');
+    if (scl) { const sp = SP(), k = sp.compare && sp.cur === 'B' ? 'B' : 'A'; sp[k] = scl.dataset.stclear === 'blank' ? startBlank(sp[k]) : Object.assign(startDefaults(), { age: sp[k].age, job: sp[k].job, route: sp[k].route }); savePrefs(); renderStart(); return; }
     const stc = ev.target.closest('[data-stcur]');
     if (stc) { SP().cur = stc.dataset.stcur; savePrefs(); renderStart(); return; }
     const bsm = ev.target.closest('[data-bsmall]');
