@@ -817,7 +817,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const rentOn = m.life.some(l => l.on && l.type === 'rental');
     const later = a => {
       const r = rows.find(x => x.age === a); if (!r) return null;
-      const inc = pension + (rentOn ? e.v.rental : 0) + (a >= m.ssAge ? 0.85 * m.ss * 12 : 0) + (r.preDraw || 0);
+      const inc = pension + (rentOn ? e.v.rental : 0) + (a >= m.ssAge ? 0.85 * m.ss * 12 : 0) + 0.85 * (r.spSS || 0) * 12 + (r.preDraw || 0);
       return { age: a, year: r.year, income: inc, taxable: Math.max(0, inc - e.std), rate: bracketOf(Math.max(0, inc - e.std)) };
     };
     const pts = [...new Set([m.ra, Math.max(m.ra, m.ssAge), Math.max(m.ra, m.rmdAge)])].map(later).filter(Boolean);
@@ -1096,7 +1096,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   // ---------- Investments & FIRE page ----------
   const KINDS = { retire: 'Retirement (pre-tax)', roth: 'Retirement (Roth)', taxable: 'Taxable investing', kids: 'Kids (529 / custodial)', off: 'Leave out' };
   const fireDefaults = () => ({ birthYear: '', retireAge: 60, wr: 4, ret: 5, ssMonthly: '', ssAge: 67, spendMode: 'actual', target: '', irrAllowance: '',
-    ends: {}, incOff: {}, kinds: {}, contrib: {}, typed: [], unmatchedKind: 'taxable', keepIrr: {}, catOff: {}, payBal: {}, taxRate: 15 });
+    ends: {}, incOff: {}, kinds: {}, contrib: {}, typed: [], unmatchedKind: 'taxable', keepIrr: {}, catOff: {}, payBal: {}, taxRate: 15, spouseBirth: '', spouseSsAge: 67, spouseOwn: '' });
   const F = () => (S.prefs.fire = Object.assign(fireDefaults(), S.prefs.fire || {}));
   // one-click starting points for accounts that have no file here
   const QUICK = [["Spouse's 401(k) / 403(b)", 'retire'], ['Traditional IRA', 'retire'], ['Roth IRA', 'roth'], ['HSA', 'roth'], ['Brokerage account', 'taxable'], ['529 college plan', 'kids']];
@@ -1191,6 +1191,16 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const tax = Math.min(0.6, Math.max(0, num(f.taxRate) / 100));
     const lifeNet = life.filter(s => s.on).reduce((x, s) => x + s.monthly * (s.type === 'benefit' ? 1 : 1 - tax) - (s.premiums || 0), 0);
     const ssNet = ss * (1 - 0.85 * tax);
+    const own = a => a < 67 ? 1 - (Math.min(36, (67 - a) * 12) * 5 / 9 + Math.max(0, (67 - a) * 12 - 36) * 5 / 12) / 100 : 1 + 0.08 * (Math.min(70, a) - 67);
+    const spRed = a => a >= 67 ? 1 : 1 - (Math.min(36, (67 - a) * 12) * 25 / 36 + Math.max(0, (67 - a) * 12 - 36) * 5 / 12) / 100;
+    const pia = ssa && ssa.byAge[ssa.fra || 67] && !num(f.ssMonthly) ? ssa.byAge[ssa.fra || 67] : ss / own(ssAge);
+    const spBirth = num(f.spouseBirth), spAge = Math.min(70, Math.max(62, Math.round(num(f.spouseSsAge) || 67)));
+    const spOwnFull = num(f.spouseOwn);
+    const spSpousal = 0.5 * pia * spRed(Math.min(spAge, 67)), spOwnAt = spOwnFull * own(spAge);
+    const spouseSS = spBirth && (pia || spOwnFull) ? Math.max(spSpousal, spOwnAt) : 0;
+    const spouseKind = spouseSS && spSpousal >= spOwnAt ? 'spousal' : 'own';
+    // the spouse's check in a given year: once she's reached her starting age and (for a spousal benefit) you've filed
+    const spIn = (y, a) => spouseSS && y - spBirth >= spAge && (spouseKind === 'own' || a >= ssAge) ? spouseSS : 0;
     // required minimum distributions from pre-tax accounts: age 75 if born 1960 or later, 73 if 1951-59 (SECURE 2.0)
     const by = num(birthYear), rmdAge = by >= 1960 ? 75 : by >= 1951 ? 73 : 72;
     const ULT = { 72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16, 86: 15.2, 87: 14.4, 88: 13.7, 89: 12.9, 90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4 };
@@ -1207,7 +1217,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       let pre = pot('retire'), roth = pot('roth'), txb = pot('taxable'), outAge = null;
       for (let a = age0; a <= Math.max(END, age0 + 5); a++) {
         const y = year + (a - age0);
-        const spend = spendIn(y), covered = Math.min(spend, lifeNet + (a >= ssAge ? ssNet : 0));
+        const spSS = spIn(y, a);
+        const spend = spendIn(y), covered = Math.min(spend, lifeNet + (a >= ssAge ? ssNet : 0) + spSS * (1 - 0.85 * tax));
         const need = spend - covered, fiNum = need * 12 / (1 - tax) / wr, working = a < stop;
         const bal = Math.max(0, pre) + Math.max(0, roth) + Math.max(0, txb);
         const rmd = a >= rmdAge && pre > 0 ? pre / (ULT[Math.min(a, 100)] || 6.4) : 0;
@@ -1220,7 +1231,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
           x = Math.min(roth, left); roth -= x; left -= x;
           if (left > 1 && outAge == null) outAge = a;
         }
-        out.push({ age: a, year: y, spend, covered, need, fiNum, bal, working, rmd, taxes, preDraw, ok: bal >= fiNum });
+        out.push({ age: a, year: y, spend, covered, need, fiNum, bal, working, rmd, taxes, preDraw, spSS, ok: bal >= fiNum });
         pre = pre * (1 + r) + (working ? add('retire') * 12 : 0);
         roth = roth * (1 + r) + (working ? add('roth') * 12 : 0);
         txb = txb * (1 + r) + (working ? add('taxable') * 12 : 0);
@@ -1233,9 +1244,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       for (let s = age0; s <= 80; s++) if (sim(s).outAge == null) { fiAge = s; break; }
     }
     const atRetire = rows.find(x => x.age === ra) || null;
-    const nowSpend = spendIn(year), nowNeed = Math.max(0, nowSpend - Math.min(nowSpend, lifeNet + (age0 != null && age0 >= ssAge ? ssNet : 0)));
+    const nowSpend = spendIn(year), nowNeed = Math.max(0, nowSpend - Math.min(nowSpend, lifeNet + (age0 != null && age0 >= ssAge ? ssNet : 0) + (age0 != null ? spIn(year, age0) * (1 - 0.85 * tax) : 0)));
     return { f, mo, year, age0, accts, invested, kidsTotal, contrib, bankSaving, withHistory, rated, actualRet, actualReal, INFL, actual, irregular, irrIds, irrTotal, irrOutMo, cats, regular, allowance, bills, target, base, life, lifeMo, ss, ssAge, wr, r,
-      rows, fiAge, outAge, END, ra, atRetire, tax, rmdAge, ssa, ssFromStmt, birthYear, nowNeed, fiNow: nowNeed * 12 / wr };
+      rows, fiAge, outAge, END, ra, atRetire, tax, rmdAge, pia, spouseSS, spouseKind, spAge, spBirth, spSpousal, spOwnAt, ssa, ssFromStmt, birthYear, nowNeed, fiNow: nowNeed * 12 / wr };
   }
 
 
@@ -1255,7 +1266,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         const pension = v.life.filter(l => l.on && l.type === 'pension').reduce((x, l) => x + l.monthly * 12, 0);
         const rental = v.life.some(l => l.on && l.type === 'rental') ? e.v.rental : 0;
         let tax = 0;
-        for (const r of v.rows) if (r.age >= v.ra) tax += ordTax(Math.max(0, pension + rental + (r.age >= v.ssAge ? 0.85 * v.ss * 12 : 0) + (r.preDraw || 0) - e.std));
+        for (const r of v.rows) if (r.age >= v.ra) tax += ordTax(Math.max(0, pension + rental + (r.age >= v.ssAge ? 0.85 * v.ss * 12 : 0) + 0.85 * (r.spSS || 0) * 12 + (r.preDraw || 0) - e.std));
         const last = v.rows[v.rows.length - 1];
         res.push({ age: a, monthly: ssa.byAge[a], tax, left: last ? last.bal : 0, outAge: v.outAge, fiAge: v.fiAge });
       }
@@ -1312,6 +1323,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <label>Social Security, monthly<input id="fSs" data-f="ssMonthly" inputmode="numeric" value="${esc(f.ssMonthly)}" placeholder="${m.ssFromStmt ? usd0(m.ssFromStmt) + ' (statement)' : 'from ssa.gov'}"></label>
       <label>Social Security starts at age<input id="fSsAge" data-f="ssAge" inputmode="numeric" value="${esc(f.ssAge)}"></label>
       <label>Tax rate in retirement (%)<input id="fTax" data-f="taxRate" inputmode="decimal" value="${esc(f.taxRate)}"></label>
+      <label>Spouse's birth year<input id="fSpBirth" data-f="spouseBirth" inputmode="numeric" value="${esc(f.spouseBirth)}" placeholder="if married"></label>
+      <label>Spouse's Social Security starts at<input id="fSpAge" data-f="spouseSsAge" inputmode="numeric" value="${esc(f.spouseSsAge)}"></label>
+      <label>Spouse's own benefit at full age<input id="fSpOwn" data-f="spouseOwn" inputmode="numeric" value="${esc(f.spouseOwn)}" placeholder="from her ssa.gov, optional"></label>
     </div>${m.ssa && Object.keys(m.ssa.byAge).length ? `<div class="ssages" role="group" aria-label="Social Security by starting age">${Object.entries(m.ssa.byAge).map(([a, v]) => `<button type="button" class="linkbtn${+a === m.ssAge ? ' on' : ''}" data-ssage="${a}"><span>${a}</span><b class="num">${usd0(v)}</b></button>`).join('')}</div>
       <p class="muted" style="margin:6px 0 0;font-size:13px">From your Social Security statement (${m.ssa.asOf || ''}); pick a starting age. It assumes you keep earning about ${usd0(m.ssa.assumedEarnings || 0)} a year until you start, so stopping work earlier lowers it.${f.ssMonthly ? ' Your typed amount is used instead; clear it to use the statement.' : ''}</p>` : ''}${m.actualRet != null ? `<p style="margin:10px 0 0">Your accounts returned <b>${pct1(m.actualRet)}</b> a year over the statements loaded${m.rated.length < m.accts.filter(a => a.fromFile).length ? ' (accounts with full history)' : ''}, about <b>${pct1(m.actualReal)}</b> after ${pct1(m.INFL)} inflation. One year is a short sample, so a long-run figure is usually lower.
       <button class="linkbtn" id="useRet" type="button" data-ret="${(m.actualReal * 100).toFixed(1)}">Use ${pct1(m.actualReal)}</button></p>` : ''}<p style="margin:10px 0 0">The FIRE number is the yearly amount your investments must cover, divided by the withdrawal rate (4% means × 25).</p></div>`;
@@ -1350,7 +1364,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <p style="margin:10px 0 0">Retirement spending: <b>${usd0(m.base)}</b> a month now${m.atRetire && Math.round(m.atRetire.spend) !== Math.round(m.base) ? `, <b>${usd0(m.atRetire.spend)}</b> at ${m.ra} once loans are paid off` : ''}.</p></div>
       <div class="card"><h3>Income that lasts for life</h3><p>Keeps coming after you stop working, so it shrinks what investments must cover. Untick anything that won't last (a rental you'd sell).</p>
       ${m.life.map(s => `<label class="toggle"><input type="checkbox" data-inc="${esc(s.source)}"${s.on ? ' checked' : ''}> ${esc(s.source)}${s.type === 'rental' ? ' <span class="muted" style="font-size:12px">rental</span>' : ''}${s.dfas ? ` <span class="muted" style="font-size:12px">taxable, from DFAS${s.premiums ? '; ' + usd0(s.premiums) + ' insurance comes out' : ''}</span>` : ''}<span class="amt num">${usd0(s.monthly)}/mo</span></label>`).join('') || '<p>No pension, benefits or rental income found in your statements.</p>'}
-      <div class="toggle"><span>Social Security from age ${m.ssAge}</span><span class="amt num">${m.ss ? usd0(m.ss) + '/mo' : 'set it above'}</span></div></div></div>`;
+      <div class="toggle"><span>Social Security from age ${m.ssAge}</span><span class="amt num">${m.ss ? usd0(m.ss) + '/mo' : 'set it above'}</span></div>
+      ${m.spBirth ? `<div class="toggle"><span>Spouse's Social Security from her age ${m.spAge}<div class="muted" style="font-size:12px">${m.spouseKind === 'spousal' ? `spousal benefit: half of your ${usd0(m.pia)} full-age amount${m.spAge < 67 ? ', reduced for starting at ' + m.spAge : ''}; starts once you've filed` : 'her own benefit (larger than the spousal one)'}</div></span><span class="amt num">${usd0(m.spouseSS)}/mo</span></div>` : '<p class="muted" style="margin:6px 0 0;font-size:13px">Married? Add your spouse\'s birth year under About you to count her Social Security (up to half of yours).</p>'}</div></div>`;
 
     // projection
     if (m.rows.length) {
