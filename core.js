@@ -283,6 +283,7 @@
     if (/Wage and Tax/i.test(all) && /W-2/.test(all) && /Federal income tax withheld/i.test(all)) return parseW2(fileName, all);
     if (/RETIREE ACCOUNT STATEMENT/i.test(all.slice(0, 400))) return parseRAS(fileName, all);
     if (/LEAVE AND EARNINGS STATEMENT/i.test(all.slice(0, 400))) return parseLES(fileName, all);
+    if (/Form 1098\b/i.test(all) && /Mortgage interest received/i.test(all)) return parse1098(fileName, all);
     if (/Form 1099-R/i.test(all) && /Gross Distribution/i.test(all)) return parse1099R(fileName, all);
     const per = p1.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:to|-|–|through)\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
     const acc = p1.match(/([A-Za-z][A-Za-z ]{1,30}?)\s*Account\s*(?:#|Number|No\.?)\s*:?\s*([*xX•\d-]{4,})/);
@@ -411,6 +412,54 @@
       ytdTaxable, ytdWithheld, paidMonths, status: (all.match(/WITHHOLDING STATUS:\s*([A-Z ]+?)\s*\n/) || [])[1] || null,
       crdp: money((all.match(/\(CRDP\) AMOUNT IS\s*\$([\d,]+\.\d{2})/i) || [])[1] || ''), sbpCoverage: (all.match(/SBP COVERAGE TYPE:\s*(.+?)\s+ANNUITY/i) || [])[1] || null,
       sbpAnnuity: money((all.match(/WHICH IS\s*([\d,]+\.\d{2})/i) || [])[1] || ''), txns: [], warnings: [] };
+  }
+
+  /* Form 1098 (mortgage interest) plus the lender's year-end summary printed with it: interest, starting and ending
+     balance, principal paid, escrow for property tax and insurance. Interest and principal paid give the rate and,
+     at the pace actually paid, the payoff date. Whether it's the home is read from box 8 matching the borrower's
+     address. Account numbers and TINs are never kept. */
+  const LENDERS = /\b(Freedom Mortgage|Rocket Mortgage|Quicken Loans|Mr\.? Cooper|Nationstar|Wells Fargo|Chase|JPMorgan|Bank of America|PennyMac|U\.?S\.? Bank|Navy Federal|USAA|Veterans United|Lakeview|NewRez|Shellpoint|Guild Mortgage|loanDepot|Flagstar|Truist|PNC|Citizens|Fifth Third|Huntington|Carrington|Cenlar|Dovenmuehle|Fairway|Movement Mortgage|CrossCountry|United Wholesale|Sallie Mae|Midland|Roundpoint|Planet Home|Specialized Loan|Selene|Servbank)\b/i;
+  function parse1098(fileName, all) {
+    const N = '([\\d,]+\\.\\d{2})';
+    const box = re => { const m = all.match(re); return m ? money(m[1]) : null; };
+    const interest = box(new RegExp('1 Mortgage interest received[\\s\\S]{0,160}?\\$\\s*' + N, 'i'));
+    if (interest == null) return null;
+    const start = box(new RegExp('2 Outstanding mortgage principal[\\s\\S]{0,240}?\\$\\s*' + N, 'i'));
+    const orig = (all.match(/3 Mortgage origination date[\s\S]{0,240}?(\d{2}\/\d{2}\/\d{4})/i) || [])[1];
+    const pmi = box(new RegExp('5 Mortgage insurance premiums[\\s\\S]{0,160}?\\$\\s*[\\d,]*\\.?\\d*\\s*\\$\\s*' + N, 'i'));
+    const year = +((all.match(/For calendar year[\s\S]{0,200}?\b(20\d\d)\b/i) || all.match(/YEAR:\s*(20\d\d)/) || [])[1] || 0) || null;
+    // the lender's summary prints "label $amount" or "$amount label" (often in side-by-side columns); read it the
+    // way this document is laid out, judged by how many lines start with a dollar amount followed by words
+    const amtFirst = (all.match(/^\$[\d,]+\.\d{2} [A-Za-z]/gm) || []).length >= 4;
+    const lab = re => {
+      const after = new RegExp('(?:' + re + ')\\s*:?\\s*\\$\\s*' + N, 'i'), before = new RegExp('\\$\\s*' + N + '\\s+(?:' + re + ')', 'i');
+      const a = amtFirst ? all.match(before) || all.match(after) : all.match(after) || all.match(before);
+      return a ? money(a[1]) : null;
+    };
+    const end = lab('Ending Balance|Remaining Balance|Ending Principal Balance|Principal Balance as of 12\\/31');
+    const applied = lab('Applied Principal|Payments Applied|Principal Paid|Total Principal');
+    const tax = lab('Property Tax(?:es)?(?: Disbursements)?|County Tax|Taxes Paid');
+    const ins = lab('Hazard Insurance(?: Disbursements)?|Homeowners Insurance|Insurance Disbursements');
+    const pi = lab('Current P&I Payment|Principal and Interest Payment|P&I Payment');
+    const escrowPay = lab('Current Escrow Payment|Escrow Payment');
+    const total = lab('Current Total Payment|Total Monthly Payment|Total Payment');
+    const lenderM = all.match(LENDERS) || fileName.match(/\(([^)]+)\)/);
+    const prop = (all.match(/8 Address or description of property[\s\S]*?\n\s*(\d+[A-Za-z]? [A-Z0-9][A-Z0-9 .#']+?)(?=\s+(?:reported|interest|or because)\b|\s*\n)/) || [])[1];
+    const street = prop ? prop.trim().split(/\s+/).slice(0, 4).join(' ') : null;
+    const borrowerBlock = all.slice(0, all.search(/8 Address or description of property/i) > 0 ? all.search(/8 Address or description of property/i) : 1500);
+    const home = street ? new RegExp(street.split(' ').slice(0, 3).join('\\s+'), 'i').test(borrowerBlock) : null;
+    // rate and payoff from what was actually paid: interest over the average balance; payment = (interest + principal) / 12
+    const avg = start != null && end != null ? (start + end) / 2 : null;
+    const rate = avg ? interest / avg : null;
+    const pace = applied != null ? (interest + applied) / 12 : null, sched = pi || (total && escrowPay ? total - escrowPay : null);
+    const months = (bal, pay) => { if (!bal || !pay || !rate) return null; const r = rate / 12; if (pay <= bal * r) return null; return Math.ceil(-Math.log(1 - r * bal / pay) / Math.log(1 + r)); };
+    const nPace = months(end, pace), nSched = months(end, sched);
+    const yr = n => n != null && year ? year + 1 + Math.floor((n - 1) / 12) : null;
+    const pretty = s => s ? s.replace(/\b([A-Z])([A-Z]+)\b/g, (w, a, b) => a + b.toLowerCase()) : s;
+    return { kind: 'f1098', format: 'Form 1098', fileName, year, lender: lenderM ? pretty(lenderM[1].replace(/\s+(LLC|INC)\.?$/i, '')) : 'Mortgage', property: pretty(prop ? prop.trim() : null), home,
+      interest, startBalance: start, endBalance: end, principalPaid: applied, propertyTax: tax, insurance: ins, pmi: pmi || 0, origination: orig ? toDate(orig) : null,
+      piPayment: sched, escrowPayment: escrowPay, totalPayment: total || (sched && escrowPay ? r2(sched + escrowPay) : null),
+      rate, payoffPace: yr(nPace), payoffScheduled: yr(nSched), paceMonthly: pace, txns: [], warnings: [] };
   }
 
   /* Military Leave and Earnings Statement (DFAS Form 702, all branches). Read as a monthly pay stub so it feeds the
@@ -1020,7 +1069,8 @@
       fees: all.filter(t => t.counts === 'spend' && t.category === 'Fees & interest').map(t => ({ date: t.date, desc: t.desc, amount: -t.amount, account: t.account })),
       refunds: all.filter(t => t.refund && t.counts === 'offset').map(t => ({ date: t.date, desc: t.desc, amount: t.amount, account: t.account })),
       transfers: transferMap(all),
-      copies, pay, ras: files.map(f => f.result).filter(r => r && r.kind === 'ras').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
+      copies, pay, mortgages: files.map(f => f.result).filter(r => r && r.kind === 'f1098').sort((a, b) => (b.year || 0) - (a.year || 0)).filter((m, i, a) => a.findIndex(x => x.lender === m.lender && x.property === m.property) === i),
+      ras: files.map(f => f.result).filter(r => r && r.kind === 'ras').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
       r1099s: files.map(f => f.result).filter(r => r && r.kind === 'r1099').filter((w, i, a) => a.findIndex(x => x.year === w.year && x.payer === w.payer && x.gross === w.gross) === i).sort((a, b) => (b.year || 0) - (a.year || 0)),
       w2s: files.map(f => f.result).filter(r => r && r.kind === 'w2').filter((w, i, a) => a.findIndex(x => x.year === w.year && x.employer === w.employer && x.wages === w.wages) === i).sort((a, b) => (b.year || 0) - (a.year || 0)), ssa: files.map(f => f.result).filter(r => r && r.kind === 'ssa').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
       duplicatesRemoved: dupes.map(d => ({ date: d.dropped.date, desc: d.dropped.desc, amount: d.dropped.amount, account: d.dropped.account, file: d.dropped.file, keptFrom: d.kept.file })),
