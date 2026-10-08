@@ -1372,19 +1372,11 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <div><span class="label">A normal month in</span><span class="big">${usd0(inUsual)}</span><span class="sub">take-home pay and other income${inc.some(i => i.typed) ? ', at the usual amounts you set' : ''}</span></div>
       <div><span class="label">Regular spending</span><span class="big">${usd0(billsN + everyN)}</span><span class="sub">bills ${usd0(billsN)} and everyday ${usd0(everyN)}, without one-time costs</span></div>
       <div><span class="label">Left before one-time costs</span><span class="big ${before < 0 ? 'out' : 'in'}">${usd0(before)}</span><span class="sub">${setAside ? `after setting aside ${usd0(setAside)} for one-time costs: <b class="${left < 0 ? 'out' : 'in'}">${usd0(left)}</b>` : 'no set-aside for one-time costs'}</span></div>
-    </div></div>
-    <p class="estimate">Averages from your statements. Type your own amounts in any box; they're kept in this browser only.</p>`;
+    </div></div>`;
 
     const gaps = inc.filter(i => Math.abs(i.usual - i.avg) >= 25);
     const line = (label, v, note, cls) => `<tr class="${cls || ''}"><td>${label}${note ? `<div class="note">${note}</div>` : ''}</td><td class="r num ${cls && v < 0 ? 'out' : ''}">${usd0(v)}</td></tr>`;
-    h += `<div class="card tablewrap bud"><h3>How a normal month adds up</h3><p>Per month, top to bottom. Each line opens up further down the page.</p><table>
-      ${line('Money in', inUsual, inc.some(i => i.typed) ? 'at the usual amounts you set' : 'average deposits')}
-      ${line('Bills', -billsN, 'mortgages, loans, utilities, insurance, subscriptions')}
-      ${line('Everyday spending', -everyN, 'groceries, dining, shopping and the rest')}
-      ${line('Left before one-time costs', before, '', 'tot')}
-      ${line('Set aside for one-time costs', -setAside, typed(B.setAside) ? 'your amount' : `last year's pace (${usd0(m.irrTotal)} over ${moN} months); type your own under Money out`)}
-      ${line('Left over', left, '', 'tot')}</table>
-      ${Math.max(0, left > 0 ? left : before) >= 50 ? `<p style="margin:10px 0 0">See what investing some of it would do on the <a href="#invest">FIRE page</a>.</p>` : ''}
+    h += `<div class="card tablewrap bud"><p style="margin:0;color:var(--ink)">${usd0(inUsual)} in, ${usd0(billsN)} in bills and ${usd0(everyN)} everyday leaves <b>${usd0(before)}</b> a month. The ${usd0(setAside)} set aside for one-time costs (${typed(B.setAside) ? 'your amount' : "last year's pace; type your own under Money out"}) leaves <b class="${left < 0 ? 'out' : 'in'}">${usd0(left)}</b>.${Math.max(0, left > 0 ? left : before) >= 50 ? ` See what investing some of it would do on the <a href="#invest">FIRE page</a>.` : ''}</p>
       <details style="margin-top:10px"><summary style="cursor:pointer">Compared with the last ${moN} months</summary><table style="margin-top:6px">
       <tr><td>Actually left over, ${moN}-month average</td><td class="r num">${usd0(actualLeft)}</td></tr>
       ${gaps.map(i => `<tr><td>${esc(i.source)} at its usual amount<div class="note">${i.stopped ? `nothing since ${monName(i.last)}; ` : ''}${usd0(i.avg)} a month on average</div></td><td class="r num">${i.usual - i.avg >= 0 ? '+' : ''}${usd0(i.usual - i.avg)}</td></tr>`).join('')}
@@ -1419,11 +1411,18 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const row = c => { const b = use(c), d = lastM ? c.last - b : 0, isOpen = open.has(c.k);
       return `<tr><td><button type="button" class="catbtn" data-bopen="${esc(c.k)}" aria-expanded="${isOpen}">${esc(c.k)}</button></td><td class="r num">${usd0(c.avg)}</td><td class="r num">${lastM ? `${usd0(c.last)}${Math.abs(d) >= Math.max(25, b * 0.1) ? `<div class="note ${d > 0 ? 'over' : 'under'}">${usd0(Math.abs(d))} ${d > 0 ? 'over' : 'under'}</div>` : ''}` : '—'}</td>
         <td class="r"><input data-bc="${esc(c.k)}" inputmode="numeric" value="${esc(B.cats[c.k] || '')}" placeholder="${Math.round(c.avg)}" aria-label="Monthly budget for ${esc(c.k)}"></td></tr>${isOpen ? detail(c.k) : ''}`; };
-    const grp = (title, list) => list.length ? `<tr class="grp"><td colspan="3">${title}</td><td class="r num">${usd0(list.reduce((x, c) => x + use(c), 0))}</td></tr>${list.map(row).join('')}` : '';
+    const small = S.budSmall || (S.budSmall = {});
+    const grp = (title, list) => {
+      if (!list.length) return '';
+      const big = list.filter(c => use(c) >= 150 || c.bud != null || open.has(c.k)), rest = list.filter(c => !big.includes(c));
+      const fold = rest.length > 1 && !small[title];
+      return `<tr class="grp"><td colspan="3">${title}</td><td class="r num">${usd0(list.reduce((x, c) => x + use(c), 0))}</td></tr>${(fold ? big : list).map(row).join('')}` +
+        (rest.length > 1 ? `<tr><td colspan="3"><button type="button" class="catbtn" data-bsmall="${esc(title)}" aria-expanded="${!fold}">${fold ? `${rest.length} smaller categories` : 'Fold the smaller categories'}</button>${fold ? `<div class="note">${rest.map(c => esc(c.k)).join(', ')}</div>` : ''}</td><td class="r num">${fold ? usd0(rest.reduce((x, c) => x + use(c), 0)) : ''}</td></tr>` : '');
+    };
     const bills = cats.filter(c => BILLS.includes(c.k)), every = cats.filter(c => !BILLS.includes(c.k));
     const ending = m.bills.map(b => ({ b, y: num(b.end) || b.auto })).filter(x => x.y).sort((a, b) => a.y - b.y);
     const hidden = cats.find(c => /card not loaded/i.test(c.k));
-    h += `<div class="card tablewrap bud"><h3>Money out</h3><p>A month's average without one-time costs, last month${lastM ? ` (${monName(lastM + '-15')})` : ''} next to it, and your budget. Leave a box empty to use the average.</p><table>
+    h += `<div class="card tablewrap bud"><h3>Money out</h3><p>Monthly averages without one-time costs, and last month${lastM ? ` (${monName(lastM + '-15')})` : ''}. Type a budget in any box (kept in this browser only); click a category to see what's in it.</p><table>
       <tr><th>Category</th><th class="r">Average / mo</th><th class="r">Last month</th><th class="r">Budget / mo</th></tr>
       ${grp('Bills', bills)}${grp('Everyday', every)}
       <tr class="grp"><td colspan="3">Set aside for one-time costs<div class="note">repairs, projects, big purchases</div></td><td class="r"><input data-bs="1" inputmode="numeric" value="${esc(B.setAside)}" placeholder="${Math.round(irrMo)}" aria-label="Monthly set-aside for one-time costs"></td></tr>
@@ -1463,14 +1462,13 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       }).join('');
       const varRows = varies.length ? `<tr class="grp"><td colspan="3">Monthly, amount varies</td><td class="r num">${usd0(varies.reduce((x, v) => x + v.typical, 0))}</td></tr>` +
         varies.map(v => `<tr><td>${esc(v.name)}<div class="note">${esc(v.category)} · paid ${v.n} of ${nMonths} months</div></td><td class="r num">${usd0(v.typical)}<div class="note">${usd0(v.lo)}–${usd0(v.hi)}</div></td><td class="r num">—</td><td class="r num">${usd0(v.typical)}</td></tr>`).join('') : '';
-      h += `<div class="card tablewrap bud"><h3>Bills by how often they come</h3>
-        <p>Regular bills and subscriptions, grouped by schedule. A bill every 3 or 6 months makes the month it lands in look high; "a month" spreads it out.</p>
-        <p style="margin:0 0 8px"><b>Expected in ${monName(nowK + '-15')}: ${usd0(expect(nowK))}</b> · in ${monName(nextK + '-15')}: ${usd0(expect(nextK))} <span class="note">(these bills only, at their usual amounts)</span></p>
-        <table><tr><th>Bill</th><th class="r">Amount</th><th class="r">Next due</th><th class="r">A month</th></tr>${grpRows}${varRows}</table></div>`;
+      h += `<details class="card tablewrap bud yby"${S.budFreqOpen ? ' open' : ''} id="budFreq"><summary><h3>Bills by how often they come</h3><span class="muted">due in ${monName(nowK + '-15')}: <b>${usd0(expect(nowK))}</b> · ${monName(nextK + '-15')}: <b>${usd0(expect(nextK))}</b></span></summary>
+        <p style="margin-top:8px">Regular bills and subscriptions by schedule. A bill every 3 or 6 months makes the month it lands in look high; "a month" spreads it out.</p>
+        <table><tr><th>Bill</th><th class="r">Amount</th><th class="r">Next due</th><th class="r">A month</th></tr>${grpRows}${varRows}</table></details>`;
     }
 
     // one-time costs
-    if (m.irregular.length) h += `<div class="card tablewrap bud"><details><summary style="cursor:pointer"><b>One-time costs, last ${moN} months:</b> ${m.irregular.length} payments, ${usd0(m.irrTotal)} (${usd0(m.irrTotal / mo)} a month)</summary>
+    if (m.irregular.length) h += `<div class="card tablewrap bud"><details class="yby"><summary><h3>One-time costs</h3><span class="muted">last ${moN} months: ${m.irregular.length} payments, ${usd0(m.irrTotal)} (${usd0(m.irrTotal / mo)} a month)</span></summary>
       <p style="margin:8px 0">Payments of $500 or more made once or twice outside regular bills, plus any you unticked under a category. They're left out of the averages above and covered by the set-aside instead. Tick any that will keep happening on the FIRE page.</p><table>
       ${m.irregular.slice().sort((a, b) => a.amount - b.amount).map(t => `<tr><td>${esc(t.name)}<div class="note">${t.date} · ${esc(t.category)}</div></td><td class="r num">${usd0(-t.amount)}</td></tr>`).join('')}</table></details></div>`;
     h += `<p class="muted" style="font-size:13px">A tool for your own numbers, not financial advice.</p>`;
@@ -1616,6 +1614,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     renderInvest(); renderTaxes(); renderBudget();
   }
   window.addEventListener('hashchange', setPage);
+  document.addEventListener('toggle', ev => { if (ev.target.id === 'budFreq') S.budFreqOpen = ev.target.open; }, true);
   document.addEventListener('toggle', ev => { const d = ev.target; if (!d.dataset || d.dataset.bpd == null) return; const o = S.budOpenPay || (S.budOpenPay = new Set()); if (d.open) o.add(d.dataset.bpd); else o.delete(d.dataset.bpd); }, true);
   document.addEventListener('change', ev => {
     const t = ev.target, d = t.dataset, f = F();
@@ -1663,6 +1662,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     if (af) { const fv = F(), amt = af.dataset.addfire; fv.typed = fv.typed.filter(a => a.id !== 'budget');
       if (+amt) fv.typed.push({ id: 'budget', name: 'Invested from budget', kind: 'taxable', balance: '0', monthly: amt });
       savePrefs(); renderInvest(); return; }
+    const bsm = ev.target.closest('[data-bsmall]');
+    if (bsm) { const o = S.budSmall || (S.budSmall = {}); o[bsm.dataset.bsmall] = !o[bsm.dataset.bsmall]; renderBudget(); return; }
     const bo = ev.target.closest('[data-bopen]');
     if (bo) { const o = S.budOpen || (S.budOpen = new Set()), k = bo.dataset.bopen; if (o.has(k)) o.delete(k); else o.add(k); renderBudget(); return; }
     const uu = ev.target.closest('[data-useusual]');
