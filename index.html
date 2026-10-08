@@ -52,6 +52,12 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .ssages button { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 6px; text-decoration: none; text-align: left; color: var(--ink); background: var(--surface); }
 .ssages button span { font-size: 12px; color: var(--muted); }
 .ssages button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.txform { display: grid; gap: 6px; min-width: 0; }
+.txrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--rule); }
+.txrow span { display: grid; min-width: 0; }
+.txrow small { color: var(--muted); font-size: 12px; }
+.txrow input, .txrow select { width: 120px; flex: none; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); color: var(--ink); padding: 3px 6px; font: inherit; text-align: right; }
+.txrow select { width: 170px; text-align: left; }
 .brand .expand b { color: var(--ink); font-weight: 700; }
 .brand p { margin: 6px 0 0; color: var(--muted); max-width: 64ch; }
 .privacy { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--in); border: 1px solid currentColor; border-radius: 999px; padding: 4px 12px; }
@@ -611,6 +617,83 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   }
 
   // what was taxed and withheld, from pay stubs (later W-2s) and the Social Security statement. Facts, not tax advice.
+
+  /* A rough federal estimate for this year, married filing jointly, from what's loaded plus anything typed in.
+     Ordinary brackets and standard deduction are 2026 law; dividends and long-term gains at 15%; child credit
+     $2,200 a child under 17, $500 another dependent; 3.8% net investment tax and 0.9% extra Medicare over $250K.
+     It is an estimate to show the shape of the year, not a return. */
+  const BR26 = [[24800, .10], [100800, .12], [211400, .22], [403550, .24], [512450, .32], [768700, .35], [Infinity, .37]];
+  const ordTax = x => { let t = 0, lo = 0; for (const [hi, r] of BR26) { if (x > lo) t += (Math.min(x, hi) - lo) * r; lo = hi; } return t; };
+  const bracketOf = x => (BR26.find(([hi]) => x <= hi) || [0, .37])[1];
+  function taxEstimate(R) {
+    const tx = S.prefs.tax = Object.assign({}, S.prefs.tax || {});
+    const mo = Math.max(1, R.totals.monthsCovered), yr = v => v / mo * 12, val = (k, d) => tx[k] != null && tx[k] !== '' ? num(tx[k]) : d;
+    const pays = R.pay || [], w2 = (R.w2s || [])[0];
+    const wagesAuto = pays.length ? pays.reduce((x, p) => x + ((p.ytd || {}).taxable || (p.ytd || {}).gross || 0) * p.scale, 0) : w2 ? w2.wages : 0;
+    const withheldAuto = pays.length ? pays.reduce((x, p) => x + p.fedWithheldYtd * p.scale, 0) : w2 ? w2.fedWithheld : 0;
+    const inc = t => R.income.filter(s => s.type === t).reduce((x, s) => x + s.total, 0);
+    const milNet = yr(inc('pension')), rent = yr(inc('rental')), va = yr(inc('benefit'));
+    const taxableInv = R.txns.filter(t => t.accountType === 'invest' && t.inWindow && ['dividend', 'interest'].includes(t.invKind) && !/roth|ira|401|403|tsp/i.test(t.account)).reduce((x, t) => x + t.amount, 0);
+    const bankInt = R.txns.filter(t => t.inWindow && t.counts === 'income' && t.incomeType === 'interest').reduce((x, t) => x + t.amount, 0);
+    const housing = (R.recurring || []).filter(r => r.active && r.category === 'Housing');
+    const rentalLoan = housing.find(r => r.key === tx.rentalLoan);
+    // without the rental's own statements: rent minus its loan payments (payments include principal, so this overstates profit)
+    const rentalAuto = Math.max(0, rent - (rentalLoan ? rentalLoan.perYear : 0));
+    const v = {
+      wages: val('wages', wagesAuto), spouse: val('spouse', 0), mil: val('mil', milNet), rental: val('rental', rentalAuto),
+      divs: val('divs', yr(taxableInv)), interest: val('interest', yr(bankInt)), gains: val('gains', 0), other: val('other', 0),
+      kids: val('kids', 1), deps: val('deps', 1), itemized: val('itemized', 0), withheld: val('withheld', withheldAuto), milWithheld: val('milWithheld', 0) };
+    const ordinary = v.wages + v.spouse + v.mil + v.rental + v.interest + v.other, pref = v.divs + v.gains;
+    const total = ordinary + pref, std = 32200, ded = Math.max(std, v.itemized);
+    const taxable = Math.max(0, total - ded), ordTaxable = Math.max(0, taxable - pref);
+    const income = ordTax(ordTaxable) + Math.min(pref, taxable) * 0.15;
+    const credits = Math.min(income, v.kids * 2200 + v.deps * 500);
+    const niit = Math.max(0, Math.min(v.rental + v.divs + v.interest + v.gains, total - 250000)) * 0.038;
+    const addMed = Math.max(0, v.wages + v.spouse - 250000) * 0.009;
+    const tax = income - credits + niit + addMed, paid = v.withheld + v.milWithheld;
+    return { tx, v, auto: { wages: wagesAuto, mil: milNet, rental: rentalAuto, divs: yr(taxableInv), interest: yr(bankInt), withheld: withheldAuto },
+      va, rent, housing, rentalLoan, ordinary, pref, total, std, ded, taxable, income, credits, niit, addMed, tax, paid,
+      effective: total > 0 ? tax / total : 0, marginal: bracketOf(ordTaxable), balance: paid - tax };
+  }
+  function taxEstimateHTML(R) {
+    const e = taxEstimate(R), v = e.v, tx = e.tx;
+    const inp = (k, label, auto, note) => `<label class="txrow"><span>${label}${note ? `<small>${note}</small>` : ''}</span>
+      <input data-tx="${k}" inputmode="decimal" value="${esc(tx[k] != null ? tx[k] : '')}" placeholder="${auto != null ? Math.round(auto).toLocaleString('en-US') : '0'}"></label>`;
+    const loanSel = e.housing.length ? `<label class="txrow"><span>Which payment is the rental's loan?<small>until its statements are loaded</small></span>
+      <select data-tx="rentalLoan"><option value="">none / not sure</option>${e.housing.map(r => `<option value="${esc(r.key)}"${tx.rentalLoan === r.key ? ' selected' : ''}>${esc(r.name)} ${usd0(r.perYear / 12)}/mo</option>`).join('')}</select></label>` : '';
+    const line = (l, x, cls) => `<tr><td>${l}</td><td class="r num ${cls || ''}">${usd0(x)}</td></tr>`;
+    return `<div class="card"><h3>Rough federal tax estimate for ${new Date().getFullYear()}</h3>
+      <p>Married filing jointly, 2026 brackets, a full year at this year's pace. Grey numbers come from your files; type over any of them. The weakest guesses are marked.</p>
+      <div class="split"><div class="txform">
+        ${inp('wages', 'Your wages (taxable)', e.auto.wages, 'pay stub pace, after pre-tax deductions')}
+        ${inp('spouse', 'Spouse wages (taxable)', 0, 'from her W-2 box 1 or pay stubs')}
+        ${inp('mil', 'Military retired pay, gross', e.auto.mil, 'rough: bank shows it after withholding; use the DFAS 1099-R')}
+        ${inp('rental', 'Rental profit', e.auto.rental, `rough: rent ${usd0(e.rent)} a year minus the loan you pick below; needs the house statements`)}
+        ${loanSel}
+        ${inp('divs', 'Dividends (taxable accounts)', e.auto.divs, 'Robinhood, not the Roth')}
+        ${inp('interest', 'Interest', e.auto.interest)}
+        ${inp('gains', 'Long-term gains from selling', 0)}
+        ${inp('other', 'Other income', 0)}
+        ${inp('kids', 'Children under 17', 1, 'your W-4 dependents amount suggests 1 child + 1 other')}
+        ${inp('deps', 'Other dependents', 1)}
+        ${inp('itemized', 'Itemized deductions, if more than standard', 0, 'home mortgage interest + property and sales tax')}
+        ${inp('withheld', 'Federal tax withheld from your pay', e.auto.withheld, 'pay stub pace')}
+        ${inp('milWithheld', 'Withheld from military retired pay', 0, 'DFAS statement or 1099-R box 4')}
+      </div>
+      <div class="tablewrap"><table>
+        ${line('Income counted', e.total)}${e.va ? `<tr><td class="muted">VA disability, not taxed</td><td class="r num muted">${usd0(e.va)}</td></tr>` : ''}
+        ${line(e.ded > e.std ? 'Itemized deductions' : 'Standard deduction', -e.ded)}
+        ${line('Taxable income', e.taxable)}
+        ${line('Income tax', e.income)}${e.credits ? line('Child and dependent credits', -e.credits, 'in') : ''}${e.niit ? line('Net investment income tax', e.niit) : ''}${e.addMed ? line('Additional Medicare', e.addMed) : ''}
+        <tr><td><b>Estimated federal tax</b></td><td class="r num"><b>${usd0(e.tax)}</b></td></tr>
+        <tr><td>Effective rate (of income counted)</td><td class="r num"><b>${pct1(e.effective)}</b></td></tr>
+        <tr><td>Top bracket reached</td><td class="r num">${Math.round(e.marginal * 100)}%</td></tr>
+        ${line('Withheld at this pace', e.paid)}
+        <tr><td><b>${e.balance >= 0 ? 'Rough refund' : 'Rough amount owed'}</b></td><td class="r num ${e.balance >= 0 ? 'in' : 'out'}"><b>${usd0(Math.abs(e.balance))}</b></td></tr>
+      </table></div></div>
+      <p class="estimate">A rough estimate from your files and the numbers above, not a tax return and not tax advice. Social Security and Medicare are separate and already shown above.</p></div>`;
+  }
+
   function renderTaxes() {
     const el = $('taxesPage');
     if (document.body.dataset.page !== 'taxes') return;
@@ -633,7 +716,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <span class="sub">${T.ss ? `plus ${usd0(T.medicare || 0)} Medicare; employers paid about the same` : 'add your Social Security statement'}</span></div>
     </div></div>
     <p class="estimate">Facts from your documents, not tax advice. Your return settles what you actually owe.</p>`;
-    el.innerHTML = h + tabTaxes(R);
+    el.innerHTML = h + taxEstimateHTML(R) + tabTaxes(R);
   }
 
   function tabTaxes(R) {
@@ -1060,6 +1143,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
   window.addEventListener('hashchange', setPage);
   document.addEventListener('change', ev => {
     const t = ev.target, d = t.dataset, f = F();
+    if (t.closest('#taxesPage') && t.dataset.tx) { const tx = S.prefs.tax = S.prefs.tax || {}; if (t.value.trim() === '') delete tx[t.dataset.tx]; else tx[t.dataset.tx] = t.value.trim(); savePrefs(); renderTaxes(); return; }
     if (!t.closest('#investPage')) return;
     if (d.f) f[d.f] = t.value.trim();
     else if (d.fc === 'spendMode') f.spendMode = t.checked ? 'target' : 'actual';
