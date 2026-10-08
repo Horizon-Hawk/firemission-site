@@ -226,6 +226,8 @@ body[data-page="start"] .sources, body[data-page="start"] #trust { display: none
 .det b { display: block; font-size: 14px; }
 .det .muted { display: block; font-size: 12px; line-height: 1.35; }
 .det input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); }
+.milbox { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--rule-strong); }
+.milbox h4 { font-size: 15px; margin: 0 0 8px; }
 .detage { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .detage input { border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--surface); padding: 2px 6px; color: var(--ink); font: inherit; }
 .bud td.r input { width: 96px; text-align: right; }
@@ -1553,11 +1555,12 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     ['vape', 'Vaping', 0, 1500, 50, 1, 'pods or disposables, about $30 a week'],
     ['bet', 'Sports betting, losing $50 a week', 0, 2600, 50, 1, 'money lost, not money wagered'],
     ['dropout', 'Leaving college after 2 years', 0, 0, 0, 0.66, 'the loans stay; workers with some college and no degree earn about 66% of what graduates do (BLS, 2024)'],
+    ['support', 'Paying child support for one child', 0, 0, 18, 1, 'state guidelines often set about 17-25% of income for one child; figured here at 20% of pay, for 18 years'],
     ['medical', 'A big medical bill with no insurance', 20000, 0, 0, 1, 'a hospital stay can run $20,000 or more'],
     ['divorce', 'Divorce', 15000, 0, 0, 1, 'lawyers and court, often $15,000 or more, and savings split in half'],
   ];
   const AREA = { low: { rent: 1000, home: 250000, pay: 0.9, label: 'Lower-cost area' }, avg: { rent: 1450, home: 400000, pay: 1, label: 'Average area' }, high: { rent: 2300, home: 750000, pay: 1.2, label: 'Higher-cost area' } };
-  const startDefaults = () => ({ age: 18, saved: 0, job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, wedding: 28, spousePay: 50000, save: 10, match: true, stay20: false, det: {} });
+  const startDefaults = () => ({ age: 18, saved: 0, job: 'Electrician', route: '', area: 'avg', help: 50, roomTill: 24, car: 'used', kids: 2, kidAge: 30, home: 32, marry: true, wedding: 28, weddingCost: 33000, spousePay: 50000, save: 10, match: true, milYears: 4, second: '', gi: true, va: 0, det: {} });
   const SP = () => { const p = S.prefs.start = Object.assign({ cur: 'A', compare: false }, S.prefs.start || {}); p.A = Object.assign(startDefaults(), p.A || {}); if (p.B) p.B = Object.assign(startDefaults(), p.B); return p; };
 
   // income tax, today's dollars: 2026 federal brackets (single, or joint once married on one income), Social Security
@@ -1570,18 +1573,33 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     return gross - fed - fica - base * 0.04;
   }
 
+  // VA disability compensation, veteran alone, per month (2025 rates, rounded); tax-free
+  const VA_RATE = { 0: 0, 10: 175, 30: 552, 50: 1102, 70: 1759, 100: 3831 };
   function startSim(P, noDetours) {
     const job = JOBS.find(j => j[0] === P.job) || JOBS[6], rk = P.route || job[2], route = ROUTES[rk] || ROUTES.work, area = AREA[P.area] || AREA.avg;
     const det = noDetours ? {} : P.det || {}, age0 = Math.max(14, Math.min(60, num(P.age) || 18));
     const dropout = det.dropout && route[1] >= 2 ? num(det.dropout.age) || age0 + 2 : null;
     const yearsSchool = dropout ? Math.max(0, Math.min(route[1], dropout - age0)) : route[1];
     const careerAt = age0 + yearsSchool, med = job[1] * area.pay, startShare = rk === 'flight' ? 0.4 : rk === 'appr' ? 0.85 : 0.7;
+    // the military: years served, then a second career (with its own training, paid by the GI Bill after 3 years of
+    // service), a pension after 20 years (Blended Retirement System: 2% of base pay per year served) and any VA disability
+    const mil = rk === 'mil' || rk === 'rotc';
+    const svcYears = mil ? Math.max(1, Math.min(40, num(P.milYears) || 4)) : 0, svcEnd = careerAt + svcYears;
+    const job2 = mil ? JOBS.find(j => j[0] === P.second && !/military/i.test(j[0])) || null : null;
+    const med2 = job2 ? job2[1] * area.pay : med * 0.85, route2 = job2 ? ROUTES[job2[2]] || ROUTES.work : ROUTES.work, rk2 = job2 ? job2[2] : 'work';
+    const career2At = mil ? svcEnd + route2[1] : Infinity, gi = mil && P.gi !== false && svcYears >= 3;
+    const curve = (m, share, y, top) => m * (share + ((top || 1.25) - share) * Math.min(1, y / 20));
+    // military pay climbs further with rank: about 80% of the median at the start to 170% at 20 years (E-3 to E-7, O-1 to O-5)
+    const milPay = y => curve(med, 0.8, y, 1.7);
+    const basePayEnd = 0.65 * milPay(svcYears), pensionYr = mil && svcYears >= 20 ? 0.02 * svcYears * basePayEnd : 0;
+    const vaYr = mil ? (VA_RATE[num(P.va)] || 0) * 12 : 0;
     const r = 0.05, loanR = 0.035, cardR = 0.19, END = 67;
     let inv = num(P.saved), loan = 0, card = 0, loanPmt = 0, homeBal = 0, homePrice = 0, payMult = 1, married = false;
     let fiAge = null, loanFree = null, boughtAt = null, shortAt = null, shortBy = 0;
     const rows = [], recurring = [];
     for (let a = age0; a <= END; a++) {
-      const school = a < careerAt;
+      const school1 = a < careerAt, serving = mil && a >= careerAt && a < svcEnd, school2 = mil && a >= svcEnd && a < career2At;
+      const school = school1 || school2, away = school1 ? route[4] : school2 ? route2[4] : false;
       // detours that start this year
       for (const [k, , once, yearly, years, mult] of DETOURS) {
         const d = det[k]; if (!d || k === 'dropout') continue;
@@ -1589,39 +1607,43 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       }
       if (dropout && a === careerAt) payMult *= 0.66;
       const jailed = det.prison && a === (num(det.prison.age) || 22);
-      const cy = a - careerAt;
-      let gross = school ? med * route[3] : med * (startShare + (1.25 - startShare) * Math.min(1, cy / 20)) * payMult;
-      if (rk === 'flight' && !school && cy < 3) gross = Math.min(gross, 60000);
+      let gross, cy;
+      if (school1) { gross = med * route[3]; cy = 0; }
+      else if (!mil) { cy = a - careerAt; gross = curve(med, startShare, cy) * payMult; if (rk === 'flight' && cy < 3) gross = Math.min(gross, 60000); }
+      else if (serving) { cy = a - careerAt; gross = milPay(cy) * payMult; }
+      else if (school2) { cy = 0; gross = med2 * route2[3] * payMult; }
+      else { cy = a - career2At; gross = curve(med2, 0.8, cy) * payMult; }   // veterans start a second career with experience
       if (jailed) gross = 0;
-      const mil = rk === 'mil' || rk === 'rotc';
-      let pension = 0;
-      if (mil && P.stay20 && cy >= 20) pension = 0.5 * 0.65 * med * 1.25;
-      if (P.wedding && a === num(P.wedding)) { married = true; inv -= 33000; }
+      const pension = mil && a >= svcEnd ? pensionYr : 0, va = mil && a >= svcEnd ? vaYr : 0;
+      const giStipend = school2 && gi && a < svcEnd + 4 ? 24000 : 0;   // Post-9/11 GI Bill housing allowance, about $2,000 a month, tax-free
+      if (P.marry !== false && P.wedding && a === num(P.wedding)) { married = true; inv -= num(P.weddingCost); }
       // a spouse's pay counts from the wedding (until a divorce); taxes are then joint
       const spouse = married ? num(P.spousePay) : 0;
-      const net = (gross || spouse ? takeHome(gross + spouse, married, mil && cy < 20) : 0) + (pension ? takeHome(pension, married, false) : 0);
+      const net = (gross + spouse + pension ? takeHome(gross + spouse + pension, married, serving) : 0) + va + giStipend;
       // school costs: help from family, scholarships or the GI Bill, the rest borrowed
-      if (school) { const c = route[2] * (1 - num(P.help) / 100); loan += c; }
-      if (!school && a === careerAt && loan > 0) loanPmt = loan * loanR / (1 - Math.pow(1 + loanR, -10));
+      if (school1) loan += route[2] * (1 - num(P.help) / 100);
+      if (school2 && !(gi && a < svcEnd + 4)) loan += route2[2] * (1 - num(P.help) / 100);
+      if (!school && loan > 0 && !loanPmt) loanPmt = loan * loanR / (1 - Math.pow(1 + loanR, -10));
       // living costs a year
       const kidsN = num(P.kids), kidAge = num(P.kidAge) || 30;
-      const household = gross + spouse + pension;
+      const household = gross + spouse + pension + va;
       let kidsNow = 0; for (let i = 0; i < kidsN; i++) { const born = kidAge + i * 2; if (a >= born && a < born + 18) kidsNow++; }
       const buyAt = num(P.home);
       if (buyAt && !homePrice && a >= buyAt && inv >= area.home * 0.1 && area.home * 0.0075 * 12 <= household * 0.3) { homePrice = area.home; inv -= homePrice * 0.1; homeBal = homePrice * 0.9; boughtAt = a; }
       let housing;
-      if (school && route[4]) housing = 0;
-      else if (homePrice) housing = homePrice * (a - boughtAt < 30 ? 0.0075 : 0.0015) * 12; // after 30 years only tax and insurance
+      if (homePrice) housing = homePrice * (a - boughtAt < 30 ? 0.0075 : 0.0015) * 12; // after 30 years only tax and insurance
       else housing = area.rent * (kidsNow ? 1.3 : 1) * (a < num(P.roomTill) && !married && !kidsNow ? 0.6 : 1) * 12;
+      if (school1) housing = 0;              // at home or in a dorm (room and board are in the school cost)
       const car = (P.car === 'new' ? 950 : P.car === 'none' ? 120 : 350) * 12;
-      if (school) housing = 0;
-      const living = school ? (route[4] ? 300 : 300 + (P.car === 'none' ? 120 : 350)) * 12 : housing + car + (400 + 230 + 350) * 12 + kidsNow * 1500 * 12 + (married ? 600 * 12 : 0);
-      const detourCost = recurring.filter(([f, t]) => a >= f && a < t).reduce((x, [, , y]) => x + y, 0);
+      const living = school1 ? (away ? 300 : 300 + (P.car === 'none' ? 120 : 350)) * 12 : housing + car + (400 + 230 + 350) * 12 + kidsNow * 1500 * 12 + (married ? 600 * 12 : 0);
+      const supFrom = det.support ? num(det.support.age) || 22 : null;
+      const detourCost = recurring.filter(([f, t]) => a >= f && a < t).reduce((x, [, , y]) => x + y, 0) + (supFrom != null && a >= supFrom && a < supFrom + 18 ? 0.2 * gross : 0);
       // paying the student loan back over 10 years
-      let lp = 0; if (!school && loan > 0) { lp = Math.min(loan * (1 + loanR), loanPmt); loan = loan * (1 + loanR) - lp; if (loan < 1) { loan = 0; if (loanFree == null) loanFree = a; } }
+      let lp = 0; if (!school && loan > 0) { lp = Math.min(loan * (1 + loanR), loanPmt); loan = loan * (1 + loanR) - lp; if (loan < 1) { loan = 0; loanPmt = 0; if (loanFree == null) loanFree = a; } }
       if (homeBal > 0) { const hp = homePrice * 0.9 * 0.0042 * 12; homeBal = Math.max(0, homeBal * 1.03 - hp); }
       let save = net > 0 ? net * num(P.save) / 100 : 0;
-      const match = P.match && !school && gross > 0 && !mil ? gross * 0.04 : 0;
+      // a 401(k) match from a civilian employer; in uniform, the Thrift Savings Plan matches up to 5% of base pay
+      const match = serving ? 0.05 * 0.65 * gross : P.match && !school && gross > 0 ? gross * 0.04 : 0;
       let spare = net - living - detourCost - lp - save;
       if (spare < 0) { const cut = Math.min(save, -spare); save -= cut; spare += cut; }
       if (spare < -1 && !school) { if (shortAt == null) shortAt = a; shortBy = Math.max(shortBy, -spare / 12); }
@@ -1631,11 +1653,12 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       inv = inv * (1 + r) + save + match;
       if (inv < 0) { card -= inv; inv = 0; }
       const nw = inv + (homePrice ? homePrice - homeBal : 0) - loan - card;
-      if (fiAge == null && !school && a > careerAt && inv * 0.04 >= living) fiAge = a;
-      rows.push({ age: a, gross, net, living, save, match, loan, card, inv, nw, school, detourCost, lp, housing, car, kidsNow });
+      // could stop working: investments (at 4% a year) plus a pension and VA pay cover the costs
+      if (fiAge == null && !school && a > careerAt && inv * 0.04 + (a >= svcEnd ? (pension ? takeHome(pension, married, false) : 0) + va : 0) >= living) fiAge = a;
+      rows.push({ age: a, gross, net, living, save, match, loan, card, inv, nw, school, serving, detourCost, lp, housing, car, kidsNow, pension, va });
     }
     if (loanFree == null && rows.every(x => x.loan === 0)) loanFree = 0;
-    return { rows, fiAge, loanFree, boughtAt, shortAt, shortBy, job, route, rk, careerAt, med, area };
+    return { rows, fiAge, loanFree, boughtAt, shortAt, shortBy, job, route, rk, careerAt, med, area, mil, svcYears, svcEnd, job2, route2, career2At, pensionYr, vaYr, gi };
   }
 
   function startChart(series, marks) {
@@ -1685,17 +1708,24 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <label>Where you live${sel('area', Object.entries(AREA).map(([k, v]) => [k, `${v.label} (rent ${usd0(v.rent)})`]), P.area)}</label>
         <label>Roommates until age${inp('roomTill', P.roomTill, 'none', 70)}</label>
         <label>Car${sel('car', [['used', 'Used, paid off (about $350/mo)'], ['new', 'New, with a payment (about $950/mo)'], ['none', 'No car, transit (about $120/mo)']], P.car)}</label>
-        <label>Married at age${inp('wedding', P.wedding, 'not', 70)}</label>
-        <label>Spouse's yearly pay${inp('spousePay', P.spousePay, '$0', 100)}</label>
+        <label>Marriage${sel('marry', [['true', 'Get married'], ['false', 'Stay single']], P.marry !== false)}</label>
+        ${P.marry !== false ? `<label>Married at age${inp('wedding', P.wedding, '28', 70)}</label>
+        <label>Wedding cost${inp('weddingCost', P.weddingCost, '$0', 100)}</label>
+        <label>Spouse's yearly pay${inp('spousePay', P.spousePay, '$0', 100)}</label>` : ''}
         <label>Kids${inp('kids', P.kids, '0', 60)}</label>
-        <label>First child at age${inp('kidAge', P.kidAge, '30', 70)}</label>
+        ${num(P.kids) ? `<label>First child at age${inp('kidAge', P.kidAge, '30', 70)}</label>` : ''}
         <label>Buy a home at age${inp('home', P.home, 'rent', 70)}</label>
         <label>Save of take-home pay (%)${inp('save', P.save, '10', 70)}</label>
         <label class="chk"><input type="checkbox" data-st="match"${P.match ? ' checked' : ''}> Employer matches 4% into a 401(k)</label>
-        ${(P.route || usualRoute) === 'mil' || (P.route || usualRoute) === 'rotc' ? `<label class="chk"><input type="checkbox" data-st="stay20"${P.stay20 ? ' checked' : ''}> Stay 20 years for the pension</label>` : ''}
       </div>
+      ${S0.mil ? `<div class="milbox"><h4>In uniform, then what</h4><div class="form start-form">
+        <label>Years in uniform${sel('milYears', [4, 6, 8, 10, 12, 20, 24, 30].map(y => [y, y >= 20 ? `${y} years (pension)` : `${y} years`]), P.milYears)}</label>
+        <label>Second career${sel('second', [['', 'Same kind of work as a civilian'], ...JOBS.filter(j => !/military/i.test(j[0])).map(j => [j[0], `${j[0]} · ${usd0(j[1])}`])], P.second)}</label>
+        <label>VA disability rating${sel('va', [[0, 'None'], [10, '10% (about $175/mo)'], [30, '30% (about $552/mo)'], [50, '50% (about $1,102/mo)'], [70, '70% (about $1,759/mo)'], [100, '100% (about $3,831/mo)']], P.va)}</label>
+        <label class="chk"><input type="checkbox" data-st="gi"${P.gi !== false ? ' checked' : ''}> Use the GI Bill for the second career's schooling</label></div>
+        <p class="muted" style="margin:8px 0 0;font-size:13px">Service ends at ${S0.svcEnd}.${S0.pensionYr ? ` Pension from then on: about <b>${usd0(S0.pensionYr / 12)}</b> a month (2% of base pay for each year served).` : ' No pension before 20 years; the Thrift Savings Plan match (up to 5% of base pay) goes with you.'}${S0.vaYr ? ` VA disability: ${usd0(S0.vaYr / 12)} a month, tax-free.` : ''} ${S0.job2 ? `${esc(S0.job2[0])}${S0.route2[1] ? ` after ${esc(S0.route2[0].toLowerCase())}${S0.gi ? ', tuition and about $2,000 a month for housing paid by the GI Bill' : ''}` : ''}, starting at ${S0.career2At}.` : `A civilian job in similar work from ${S0.svcEnd}, at about 85% of military pay.`}</p></div>` : ''}
       ${num(P.home) ? `<p class="muted" style="margin:10px 0 0;font-size:13px">${S0.boughtAt ? `Home bought at ${S0.boughtAt}${S0.boughtAt > num(P.home) ? ` (the earliest the 10% down payment was saved and the payment fit 30% of household pay)` : ''}: ${usd0(S0.area.home)}.` : `A ${usd0(S0.area.home)} home never fit: 10% down saved and a payment under 30% of household pay.`}</p>` : ''}
-      <p class="muted" style="margin:6px 0 0;font-size:13px">${esc(job[0])}: about ${usd0(job[1])} a year at the middle of the career (about ${usd0(job[1] / 2080)} an hour), starting near ${usd0(job[1] * (job[2] === 'flight' ? 0.4 : 0.7))}. ${S0.route[1] ? `${esc(S0.route[0])}: ${S0.route[2] ? usd0(S0.route[2]) + ' a year' : 'no tuition'}${S0.route[3] ? ', paid part of the time while training' : ''}.` : ''}</p></div>`;
+      <p class="muted" style="margin:6px 0 0;font-size:13px">${esc(job[0])}: about ${usd0(job[1])} a year at the middle of the career (about ${usd0(job[1] / 2080)} an hour), starting near ${usd0(job[1] * ((P.route || job[2]) === 'flight' ? 0.4 : (P.route || job[2]) === 'appr' ? 0.85 : /mil|rotc/.test(P.route || job[2]) ? 0.8 : 0.7))}. ${S0.route[1] ? `${esc(S0.route[0])}: ${S0.route[2] ? usd0(S0.route[2]) + ' a year' : 'no tuition'}${S0.route[3] ? ', paid part of the time while training' : ''}.` : ''}</p></div>`;
 
     // detours
     h += `<div class="card"><h3>Detours</h3><p>Things that happen in real lives and set money back. Tick one to see what it does to the path, and set the age it happens.</p><div class="detours">
@@ -1868,7 +1898,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       if (d.stcompare != null) { sp.compare = t.checked; if (t.checked && !sp.B) sp.B = JSON.parse(JSON.stringify(sp.A)); sp.cur = t.checked ? 'B' : 'A'; }
       else if (d.stdet) { P.det = P.det || {}; if (t.checked) P.det[d.stdet] = { age: Math.max(num(P.age) || 18, 22) }; else delete P.det[d.stdet]; }
       else if (d.stdetage) { if (P.det && P.det[d.stdetage]) P.det[d.stdetage].age = t.value.trim(); }
-      else if (d.st) P[d.st] = t.type === 'checkbox' ? t.checked : t.value.trim();
+      else if (d.st) P[d.st] = t.type === 'checkbox' ? t.checked : d.st === 'marry' ? t.value === 'true' : t.value.trim();
       else return;
       if (d.st === 'job') P.route = '';
       savePrefs(); renderStart(); return;
