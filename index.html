@@ -1392,13 +1392,26 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     if (spare >= 50 && m.age0 != null) {
       const fv = F(), keep = fv.typed, budAcct = keep.find(a => a.id === 'budget');
       const whatIf = amt => { F().typed = keep.filter(a => a.id !== 'budget').concat(amt ? [{ id: 'wi', name: 'what-if', kind: 'taxable', balance: '0', monthly: String(amt) }] : []);
-        try { const v = fireModel(); return { fi: v.fiAge, atStop: (v.rows.find(r => r.age === v.ra) || {}).bal || 0, end: (v.rows[v.rows.length - 1] || {}).bal || 0, out: v.outAge }; } finally { S.prefs.fire.typed = keep; } };
+        try { const v = fireModel(); return { fi: v.fiAge, atStop: (v.rows.find(r => r.age === v.ra) || {}).bal || 0, end: (v.rows[v.rows.length - 1] || {}).bal || 0, out: v.outAge, rows: v.rows.map(r => [r.age, r.bal]) }; } finally { S.prefs.fire.typed = keep; } };
       const r50 = x => Math.round(x / 50) * 50;
       const amts = [...new Set([0, r50(spare / 4), r50(spare / 2), r50(spare)])].filter((a, i) => i === 0 || a >= 50);
       const res = amts.map(a => Object.assign({ a }, whatIf(a)));
       const ra = num(fv.retireAge) || 60;
-      h += `<div class="card tablewrap bud"><h3>What it could do for FIRE</h3>
+      const W = 760, Hh = 240, L = 64, Bm = 26, T = 10, ages = res[0].rows.map(r => r[0]), a0 = ages[0], a1 = ages[ages.length - 1];
+      const maxV = Math.max(1, ...res.flatMap(r => r.rows.map(x => x[1])));
+      const X = a => L + (W - L - 12) * (a - a0) / Math.max(1, a1 - a0), Y = v => T + (Hh - T - Bm) * (1 - Math.max(0, v) / maxV);
+      const stepV = niceStep(maxV);
+      let grid = '';
+      for (let v = 0; v <= maxV; v += stepV) grid += `<line x1="${L}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v === 0 ? '$0' : v >= 1e6 ? '$' + (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'M' : '$' + Math.round(v / 1000) + 'k'}</text>`;
+      const ticks = ages.filter(a => a % 5 === 0).map(a => `<text x="${X(a)}" y="${Hh - 8}" text-anchor="middle">${a}</text>`).join('');
+      const shade = i => i === 0 ? 'var(--muted)' : `color-mix(in srgb, var(--in) ${[0, 45, 70, 100][Math.min(3, i)]}%, var(--surface))`;
+      const linesSvg = res.map((r, i) => `<polyline fill="none" stroke="${shade(i)}" stroke-width="${i === res.length - 1 ? 2.5 : 2}"${i === 0 ? ' stroke-dasharray="5 4"' : ''} points="${r.rows.map(x => `${X(x[0])},${Y(x[1])}`).join(' ')}"/>`).join('');
+      const stopLine = ra >= a0 && ra <= a1 ? `<line x1="${X(ra)}" x2="${X(ra)}" y1="${T}" y2="${Hh - Bm}" stroke="var(--rule-strong)" stroke-dasharray="2 3"/><text x="${X(ra) + 4}" y="${T + 10}" text-anchor="start">stop at ${ra}</text>` : '';
+      const legend = res.map((r, i) => `<span><i style="background:${shade(i)}"></i>${r.a ? usd0(r.a) + '/mo' : 'Nothing extra'}</span>`).join('');
+      h += `<div class="card tablewrap bud chart"><h3>What it could do for FIRE</h3>
         <p>The FIRE projection rerun with some of the ${usd0(spare)} a month you have left${left > 0 ? '' : ' before one-time costs'} invested each month (taxable investing, at the FIRE page's return). ${budAcct ? `You've added <b>${usd0(num(budAcct.monthly))}</b> a month on the FIRE page.` : ''}</p>
+        <div class="legend" style="flex-wrap:wrap">${legend}</div>
+        <svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Invested balance by age for each monthly amount"><g class="g">${grid}</g>${ticks}${stopLine}${linesSvg}</svg>
         <table><tr><th>Invest each month</th><th class="r">Earliest stop age</th><th class="r">At ${ra}</th><th class="r">At 95</th><th></th></tr>
         ${res.map(r => `<tr${budAcct && Math.round(num(budAcct.monthly)) === r.a ? ' class="tot"' : ''}><td>${r.a ? usd0(r.a) : 'Nothing extra'}${r.a ? `<div class="note">${({ 1: 'a quarter of', 2: 'half of', 4: 'all of' })[Math.round(r.a / spare * 4)] || 'part of'} what's left</div>` : ''}</td><td class="r num">${r.fi != null ? r.fi : '—'}</td><td class="r num">${usd0(r.atStop)}</td><td class="r num">${r.out ? `<span class="out">runs out at ${r.out}</span>` : usd0(r.end)}</td>
           <td class="r">${r.a ? `<button type="button" class="linkbtn" data-addfire="${r.a}">Use on FIRE page</button>` : budAcct ? `<button type="button" class="linkbtn" data-addfire="0">Remove</button>` : ''}</td></tr>`).join('')}</table>
