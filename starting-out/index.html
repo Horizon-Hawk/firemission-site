@@ -56,5 +56,8 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule);
 <h2>Questions</h2><details><summary>How accurate is it?</summary><p>It is a sketch, not a forecast: today's dollars, median pay and rough national costs, with a range shown from lower pay and 3% returns to higher pay and 7%. Real lives vary a lot.</p></details><details><summary>Does it count Social Security?</summary><p>Yes. It estimates Social Security from the path's own earnings and counts it from 67 when working out when you could stop working.</p></details><details><summary>Can a parent and kid share a scenario?</summary><p>Yes. Copy a share link or save a small file; it holds only the choices, never any statements.</p></details>
 </main>
 <footer>FIRE Mission is a free tool for seeing your own numbers, not financial, tax or investment advice. <a href="/privacy/">How privacy works</a>.</footer>
-</div></body>
+</div><script>window.goatcounter = { path: function () { var h = location.hash.replace(/:.*/, ''); return location.pathname + ({ '#spending': 1, '#budget': 1, '#invest': 1, '#taxes': 1, '#start': 1 }[h] ? h : ''); } };</script>
+<script data-goatcounter="https://jeremia.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+<script>window.addEventListener('hashchange', function () { if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: window.goatcounter.path() }); });</script>
+</body>
 </html>

@@ -56,5 +56,8 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule);
 <h2>Questions</h2><details><summary>Is FIRE Mission free?</summary><p>Yes. There is no account, no sign-up and no paid tier.</p></details><details><summary>Are my files uploaded?</summary><p>No. The page reads files inside your browser, like a PDF viewer. Nothing is sent to a server, and nothing is stored except your answers in your own browser.</p></details><details><summary>Is this financial advice?</summary><p>No. It is a tool for seeing your own numbers. It shows what the numbers do under the assumptions you set.</p></details>
 </main>
 <footer>FIRE Mission is a free tool for seeing your own numbers, not financial, tax or investment advice. <a href="/privacy/">How privacy works</a>.</footer>
-</div></body>
+</div><script>window.goatcounter = { path: function () { var h = location.hash.replace(/:.*/, ''); return location.pathname + ({ '#spending': 1, '#budget': 1, '#invest': 1, '#taxes': 1, '#start': 1 }[h] ? h : ''); } };</script>
+<script data-goatcounter="https://jeremia.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+<script>window.addEventListener('hashchange', function () { if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: window.goatcounter.path() }); });</script>
+</body>
 </html>
