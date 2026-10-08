@@ -226,7 +226,10 @@ body:not([data-page="spend"]) .pg-spend, body:not([data-page="invest"]) .pg-inve
 .bud .payees { width: 100%; font-size: 13px; }
 .bud .payees td { padding: 3px 6px; border: 0; }
 .bud .payees details summary { cursor: pointer; }
-.bud .payees .tx { color: var(--muted); font-size: 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; margin: 4px 0 2px; }
+.bud .payees .tx { color: var(--muted); font-size: 12px; display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 2px 12px; margin: 4px 0 2px; }
+.bud .pline { display: flex; gap: 8px; align-items: baseline; }
+.bud .payees input[type=checkbox] { accent-color: var(--accent); margin: 0; }
+.bud .offrow summary, .bud .strike { color: var(--muted); text-decoration: line-through; }
 .stick { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
   background: var(--bg); border-bottom: 2px solid var(--ink); padding-top: 6px; margin-top: -6px; }
 .stick.stuck { box-shadow: 0 6px 12px -8px color-mix(in srgb, var(--ink) 45%, transparent); }
@@ -1176,8 +1179,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const rowsS = R ? R.txns.filter(t => t.inWindow && (t.counts === 'spend' || t.counts === 'offset')) : [];
     const seen = {};
     for (const t of rowsS) if (t.counts === 'spend') seen[t.key] = (seen[t.key] || 0) + 1;
-    const irregular = rowsS.filter(t => t.counts === 'spend' && !FIXED.includes(t.category) && -t.amount >= 500
-      && (seen[t.key] <= 2 || (t.category === 'Checks' && -t.amount >= 1000)));
+    const bud = S.prefs.budget || {}, offPayee = bud.offPayee || {}, offTx = bud.offTx || {};
+    const irregular = rowsS.filter(t => t.counts === 'spend' && (offPayee[t.key] || offTx[t.id] || !FIXED.includes(t.category) && -t.amount >= 500
+      && (seen[t.key] <= 2 || (t.category === 'Checks' && -t.amount >= 1000))));
     const irrIds = new Set(irregular.filter(t => !f.keepIrr[t.id]).map(t => t.id));
     const irrTotal = irregular.reduce((x, t) => x - t.amount, 0), irrOutMo = irregular.filter(t => irrIds.has(t.id)).reduce((x, t) => x - t.amount, 0) / mo;
     const catTot = {};
@@ -1345,8 +1349,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       c.total -= t.amount; if (ym(t.date) === lastM) c.last -= t.amount;
     }
     const BILLS = ['Housing', 'Loans', 'Utilities & phone', 'Insurance', 'Subscriptions', 'Taxes'];
-    const cats = Object.entries(cat).map(([k, c]) => ({ k, avg: c.total / mo, last: c.last, bud: typed(B.cats[k]) ? num(B.cats[k]) : null })).filter(c => Math.abs(c.avg) >= 1 || c.bud != null)
-      .sort((a, b) => b.avg - a.avg);
+    for (const t of win) if ((t.counts === 'spend' || t.counts === 'offset') && !cat[t.category]) cat[t.category] = { total: 0, last: 0 };
+    const cats = Object.entries(cat).map(([k, c]) => ({ k, avg: c.total / mo, last: c.last, bud: typed(B.cats[k]) ? num(B.cats[k]) : null })).sort((a, b) => b.avg - a.avg);
     const use = c => c.bud != null ? c.bud : c.avg;
     const irrMo = m.irrOutMo, setAside = typed(B.setAside) ? num(B.setAside) : irrMo;
     const outN = cats.reduce((x, c) => x + use(c), 0) + setAside, left = inUsual - outN;
@@ -1384,14 +1388,17 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     // spending
     // each category opens to the payees it adds up, and each payee to its payments
     const open = S.budOpen || (S.budOpen = new Set());
+    // a ticked box counts in a normal month; untick a payee or a single payment to treat it as a one-time cost
     const detail = k => {
-      const rows = win.filter(t => (t.counts === 'spend' || t.counts === 'offset') && t.category === k && !m.irrIds.has(t.id));
+      const rows = win.filter(t => (t.counts === 'spend' || t.counts === 'offset') && t.category === k);
       const by = {};
-      for (const t of rows) (by[t.name || t.key] || (by[t.name || t.key] = [])).push(t);
-      const list = Object.entries(by).map(([n, ts]) => ({ n, ts: ts.sort((a, b) => a.date < b.date ? 1 : -1), total: -ts.reduce((x, t) => x + t.amount, 0) })).sort((a, b) => b.total - a.total);
-      return `<tr class="det"><td colspan="4"><table class="payees">${list.map(p => `<tr><td><details><summary>${esc(p.n)} <span class="note">${p.ts.length} payment${p.ts.length > 1 ? 's' : ''}, last ${p.ts[0].date}</span></summary>
-        <div class="tx">${p.ts.map(t => `<span class="num">${t.date}</span><span>${esc(t.account)}</span><span class="num">${usd0(-t.amount)}</span>`).join('')}</div></details></td>
-        <td class="r num" style="vertical-align:top">${usd0(p.total)}</td><td class="r num" style="vertical-align:top">${usd0(p.total / mo)}/mo</td></tr>`).join('')}</table></td></tr>`;
+      for (const t of rows) (by[t.key] || (by[t.key] = { key: t.key, n: t.name || t.key, ts: [] })).ts.push(t);
+      const on = t => !m.irrIds.has(t.id);
+      const list = Object.values(by).map(p => Object.assign(p, { ts: p.ts.sort((a, b) => a.date < b.date ? 1 : -1), total: -p.ts.filter(on).reduce((x, t) => x + t.amount, 0), any: p.ts.some(on) }))
+        .sort((a, b) => (b.any - a.any) || (b.total - a.total) || (a.ts.reduce((x, t) => x + t.amount, 0) - b.ts.reduce((x, t) => x + t.amount, 0)));
+      return `<tr class="det"><td colspan="4"><p class="note" style="margin:0 0 4px">Ticked = part of a normal month. Untick one-offs; they move to one-time costs.</p><table class="payees">${list.map(p => `<tr class="${p.any ? '' : 'offrow'}"><td><div class="pline"><input type="checkbox" data-bpay="${esc(p.key)}"${p.any ? ' checked' : ''} aria-label="Count ${esc(p.n)} in a normal month"><details data-bpd="${esc(p.key)}"${(S.budOpenPay || new Set()).has(p.key) ? ' open' : ''}><summary>${esc(p.n)} <span class="note">${p.ts.length} payment${p.ts.length > 1 ? 's' : ''}, last ${p.ts[0].date}</span></summary>
+        <div class="tx">${p.ts.map(t => `<input type="checkbox" data-btx="${esc(t.id)}"${on(t) ? ' checked' : ''} aria-label="Count this payment"><span class="num">${t.date}</span><span>${esc(t.account)}</span><span class="num${on(t) ? '' : ' strike'}">${usd0(-t.amount)}</span>`).join('')}</div></details></div></td>
+        <td class="r num" style="vertical-align:top">${p.any ? usd0(p.total) : '<span class="note">one-off</span>'}</td><td class="r num" style="vertical-align:top">${p.any ? usd0(p.total / mo) + '/mo' : ''}</td></tr>`).join('')}</table></td></tr>`;
     };
     const row = c => { const b = use(c), d = lastM ? c.last - b : 0, isOpen = open.has(c.k);
       return `<tr><td><button type="button" class="catbtn" data-bopen="${esc(c.k)}" aria-expanded="${isOpen}">${esc(c.k)}</button></td><td class="r num">${usd0(c.avg)}</td><td class="r num">${lastM ? `${usd0(c.last)}${Math.abs(d) >= Math.max(25, b * 0.1) ? `<div class="note ${d > 0 ? 'over' : 'under'}">${usd0(Math.abs(d))} ${d > 0 ? 'over' : 'under'}</div>` : ''}` : '—'}</td>
@@ -1448,7 +1455,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
     // one-time costs
     if (m.irregular.length) h += `<div class="card tablewrap bud"><details><summary style="cursor:pointer"><b>One-time costs, last ${moN} months:</b> ${m.irregular.length} payments, ${usd0(m.irrTotal)} (${usd0(m.irrTotal / mo)} a month)</summary>
-      <p style="margin:8px 0">Payments of $500 or more made once or twice, outside regular bills. They're left out of the averages above and covered by the set-aside instead. Tick any that will keep happening on the FIRE page.</p><table>
+      <p style="margin:8px 0">Payments of $500 or more made once or twice outside regular bills, plus any you unticked under a category. They're left out of the averages above and covered by the set-aside instead. Tick any that will keep happening on the FIRE page.</p><table>
       ${m.irregular.slice().sort((a, b) => a.amount - b.amount).map(t => `<tr><td>${esc(t.name)}<div class="note">${t.date} · ${esc(t.category)}</div></td><td class="r num">${usd0(-t.amount)}</td></tr>`).join('')}</table></details></div>`;
     h += `<p class="muted" style="font-size:13px">A tool for your own numbers, not financial advice.</p>`;
     el.innerHTML = h;
@@ -1569,9 +1576,25 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     renderInvest(); renderTaxes(); renderBudget();
   }
   window.addEventListener('hashchange', setPage);
+  document.addEventListener('toggle', ev => { const d = ev.target; if (!d.dataset || d.dataset.bpd == null) return; const o = S.budOpenPay || (S.budOpenPay = new Set()); if (d.open) o.add(d.dataset.bpd); else o.delete(d.dataset.bpd); }, true);
   document.addEventListener('change', ev => {
     const t = ev.target, d = t.dataset, f = F();
     if (t.closest('#taxesPage') && t.dataset.tx) { const tx = S.prefs.tax = S.prefs.tax || {}; if (t.value.trim() === '') delete tx[t.dataset.tx]; else tx[t.dataset.tx] = t.value.trim(); savePrefs(); renderTaxes(); return; }
+    if (t.closest('#budgetPage') && (d.bpay != null || d.btx != null)) {
+      const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {});
+      const offP = B.offPayee = B.offPayee || {}, offT = B.offTx = B.offTx || {}, keep = f.keepIrr;
+      const R = S.result, txs = d.bpay != null ? R.txns.filter(x => x.key === d.bpay) : R.txns.filter(x => x.id === d.btx);
+      if (d.bpay != null) delete offP[d.bpay];
+      for (const x of txs) { delete offT[x.id]; delete keep[x.id]; }
+      if (!t.checked) { if (d.bpay != null) offP[d.bpay] = true; else offT[d.btx] = true; }
+      else {
+        // ticking one payment of an unticked payee: the payee's other payments stay out
+        if (d.btx != null && txs[0] && offP[txs[0].key]) { delete offP[txs[0].key]; for (const x of R.txns) if (x.key === txs[0].key && x.id !== d.btx) offT[x.id] = true; }
+        // a payment the page set apart on its own (large and rare) is kept when ticked
+        const mm = fireModel(); for (const x of txs) if (mm.irrIds.has(x.id)) keep[x.id] = true;
+      }
+      savePrefs(); renderBudget(); return;
+    }
     if (t.closest('#budgetPage') && (d.bu != null || d.bc != null || d.bs != null)) {
       const B = S.prefs.budget = Object.assign({ usual: {}, cats: {}, setAside: '' }, S.prefs.budget || {}), v = t.value.trim();
       if (d.bs != null) B.setAside = v;
