@@ -127,6 +127,15 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .ask-head h2 { font-size: 22px; }
 .ask-head p { margin: 0; font-size: 14px; color: var(--muted); max-width: 70ch; }
 .qgroup { padding: 6px 18px 12px; }
+.invest-page .sect { font-size: 22px; margin: 18px 0 2px; }
+.yby > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; cursor: pointer; list-style: none; }
+.yby > summary::-webkit-details-marker { display: none; }
+.yby > summary h3 { margin: 0; }
+.yby > summary h3::before { content: "▸ "; color: var(--muted); }
+.yby[open] > summary h3::before { content: "▾ "; }
+.yby[open] > summary { margin-bottom: 8px; }
+.cats { margin: 12px 0 4px; }
+.cats > summary { cursor: pointer; padding: 6px 0; }
 .paychecks > summary { cursor: pointer; font-size: 14px; color: var(--muted); }
 .paychecks > summary b { color: var(--ink); }
 .paychecks[open] > summary { margin-bottom: 8px; }
@@ -1252,6 +1261,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         <span class="sub">Investments need to cover <b class="${head.need > 0 ? 'out' : 'in'}">${usd0(head.need)}</b> a month</span></div>
     </div></div>
     <p class="estimate">A rough estimate from your numbers and the assumptions below, in today's dollars. Not financial advice.</p>`;
+    const answerAt = h.length;
+    let proj = '';
 
     // assumptions
     h += `<div class="card"><h3>About you</h3><div class="form">
@@ -1277,13 +1288,13 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
          <td class="r"><input data-typed="${esc(a.id)}" data-tf="balance" inputmode="numeric" value="${esc(a.typed.balance)}" placeholder="balance" aria-label="Balance"></td><td class="muted" colspan="3">typed in</td>
          <td class="r"><input data-typed="${esc(a.id)}" data-tf="monthly" inputmode="numeric" value="${esc(a.typed.monthly)}" placeholder="$ / month" aria-label="Monthly contribution"></td><td><button class="linkbtn" data-untype="${esc(a.id)}" type="button">Remove</button></td></tr>`
       : `<tr><td>${esc(a.name)}<div class="muted" style="font-size:12px">statement ${a.valueDate}${a.kind === 'retire' && a.rothShare ? ` · ${Math.round(a.rothShare * 100)}% of it Roth` : ''}</div></td><td>${kindSel(a.id, a.kind, 'data-akind')}</td>
-         <td class="r num">${usd0(a.value)}</td><td class="r num ${a.change >= 0 ? 'in' : 'out'}">${a.change >= 0 ? '+' : ''}${usd0(a.change)}</td>${a.market == null ? '<td class="muted" colspan="2" style="font-size:12px">add its activity export to split this</td>' : `<td class="r num">${usd0(a.added)}</td>
+         <td class="r num">${usd0(a.value)}</td><td class="r num ${a.change >= 0 ? 'in' : 'out'}">${a.change >= 0 ? '+' : ''}${usd0(a.change)}</td>${a.market == null ? '<td class="r muted" colspan="2">—</td>' : `<td class="r num">${usd0(a.added)}</td>
          <td class="r num ${a.market >= 0 ? 'in' : 'out'}">${a.market >= 0 ? '+' : ''}${usd0(a.market)}${a.yearly != null ? `<div class="muted" style="font-size:11px">${pct1(a.yearly)} a year</div>` : ''}</td>`}
          <td class="r"><input data-contrib="${esc(a.id)}" inputmode="numeric" value="${esc(f.contrib[a.id] || '')}" placeholder="${a.autoMonthly ? Math.round(a.autoMonthly) : 0}" aria-label="Monthly contribution">${a.autoMonthly && !f.contrib[a.id] ? '<div class="muted" style="font-size:11px">from statement</div>' : ''}</td><td></td></tr>`).join('');
     h += `<div class="card tablewrap"><h3>Accounts</h3><p>Choose what counts toward FIRE. Accounts come from statement PDFs; add the rest (401(k), TSP, a pension fund) by typing the balance.</p>
       <table><tr><th>Account</th><th>Counts as</th><th class="r">Worth</th><th class="r">Change</th><th class="r">You added</th><th class="r">Market</th><th class="r">Adding / month</th><th></th></tr>${arows}
       ${m.bankSaving ? `<tr><td>Sent to investments from the bank<div class="muted" style="font-size:12px">accounts not loaded here</div></td><td>${kindSel('bank', f.unmatchedKind, 'data-ukind')}</td><td colspan="4"></td><td class="r num">${usd0(m.bankSaving)}</td><td></td></tr>` : ''}
-      </table><div class="foot" style="margin-top:10px"><button class="btn" id="addAcct" type="button">Add an account</button>${QUICK.map(([n, k], i) => `<button class="linkbtn" data-quick="${i}" type="button">+ ${esc(n)}</button>`).join("")}${m.accts.some(a => a.fromFile) ? '<span class="muted" style="font-size:13px">Change and market cover the dates of the first and last statement.</span>' : ''}</div></div>`;
+      </table><div class="foot" style="margin-top:10px"><button class="btn" id="addAcct" type="button">Add an account</button>${QUICK.map(([n, k], i) => `<button class="linkbtn" data-quick="${i}" type="button">+ ${esc(n)}</button>`).join("")}</div>${m.accts.some(a => a.fromFile) ? `<p class="muted" style="margin:8px 0 0;font-size:12px">Change covers the first to the last statement loaded.${m.accts.some(a => a.fromFile && a.market == null) ? ' — means that account\'s activity export is needed to split the change into what you added and what the market did.' : ''}</p>` : ''}</div>`;
 
     // retirement spending
     const billRows = m.bills.map(b => `<div class="toggle"><span>${esc(b.name)} <span class="muted">${usd0(b.monthly)}/mo</span></span><label class="amt" style="font-size:13px;color:var(--muted)">paid off in <input data-end="${esc(b.key)}" inputmode="numeric" value="${esc(b.end)}" placeholder="${b.auto ? b.auto + ' *' : 'year'}" title="${b.auto ? 'From the 1098: paid off around ' + b.auto + ' on the regular payment' : ''}" style="width:78px;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label></div>`).join('');
@@ -1293,8 +1304,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         ${m.irregular.slice().sort((a, b) => a.amount - b.amount).map((t, i) => `<label class="toggle"><input type="checkbox" id="irr-${i}" data-irr="${esc(t.id)}"${f.keepIrr[t.id] ? ' checked' : ''}> <span>${esc(t.name)} <span class="muted" style="font-size:12px">${t.date} · ${esc(t.category)}</span></span><span class="amt num">${usd0(-t.amount)}</span></label>`).join('')}</details>` : ''}
       <label class="toggle" style="margin-top:6px"><span>Set aside for repairs and other irregular costs</span><input id="fIrr" data-f="irrAllowance" inputmode="numeric" value="${esc(f.irrAllowance)}" placeholder="$ / month" style="width:110px;margin-left:auto;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label>
       ${m.irrTotal ? `<p class="muted" style="margin:0;font-size:13px">Last year's irregular purchases averaged ${usd0(m.irrTotal / m.mo)} a month.</p>` : ''}
-      <p style="margin:12px 0 2px">Which kinds of spending continue in retirement?</p>
-      ${m.cats.map((c, i) => `<label class="toggle"><input type="checkbox" id="cat-${i}" data-cat="${esc(c.category)}"${c.on ? ' checked' : ''}> ${esc(c.category)}<span class="amt num${c.on ? '' : ' muted'}">${usd0(c.monthly)}/mo</span></label>`).join('')}
+      <details class="cats"><summary><b>Which kinds of spending continue?</b> <span class="muted">${m.cats.filter(c => c.on).length} of ${m.cats.length} kinds · ${usd0(m.cats.filter(c => c.on).reduce((x, c) => x + c.monthly, 0))}/mo</span></summary>
+      ${m.cats.map((c, i) => `<label class="toggle"><input type="checkbox" id="cat-${i}" data-cat="${esc(c.category)}"${c.on ? ' checked' : ''}> ${esc(c.category)}<span class="amt num${c.on ? '' : ' muted'}">${usd0(c.monthly)}/mo</span></label>`).join('')}</details>
       ${billRows ? `<p style="margin:10px 0 2px">Loans and mortgages drop off the year they're paid off:</p>${billRows}${m.bills.some(b => b.auto && !b.end) ? '<p class="muted" style="margin:4px 0 0;font-size:12px">* from your 1098, on the regular payment; type a year to change it (for example if you pay extra).</p>' : ''}` : ''}
       <label class="toggle" style="margin-top:6px"><input type="checkbox" id="fTarget" data-fc="spendMode"${f.spendMode === 'target' ? ' checked' : ''}> Use my own number instead<input id="fTargetAmt" data-f="target" inputmode="numeric" value="${esc(f.target)}" placeholder="$ / month" style="width:110px;margin-left:auto;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label>
       <p style="margin:10px 0 0">Retirement spending: <b>${usd0(m.base)}</b> a month now${m.atRetire && Math.round(m.atRetire.spend) !== Math.round(m.base) ? `, <b>${usd0(m.atRetire.spend)}</b> at ${m.ra} once loans are paid off` : ''}.</p></div>
@@ -1310,18 +1321,21 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       const X = i => L + (W - L - 12) * i / Math.max(1, n - 1), Y = v => T + (Hh - T - B) * (1 - Math.min(v, maxV) / maxV);
       const step = niceStep(maxV);
       let g = '';
-      for (let v = 0; v <= maxV; v += step) g += `<line x1="${L}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v >= 1e6 ? '$' + (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'M' : '$' + Math.round(v / 1000) + 'k'}</text>`;
-      const lbl = rows.map((x, i) => (x.age % 5 === 0 || i === 0) ? `<text x="${X(i)}" y="${Hh - 8}" text-anchor="middle">${x.age}</text>` : '').join('');
+      for (let v = 0; v <= maxV; v += step) g += `<line x1="${L}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v === 0 ? '$0' : v >= 1e6 ? '$' + (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'M' : '$' + Math.round(v / 1000) + 'k'}</text>`;
+      const lbl = rows.map((x, i) => (x.age % 5 === 0 || (i === 0 && 5 - x.age % 5 > 2)) ? `<text x="${X(i)}" y="${Hh - 8}" text-anchor="middle">${x.age}</text>` : '').join('');
       const pl = rows.map((x, i) => `${X(i)},${Y(x.bal)}`).join(' '), nl = rows.map((x, i) => `${X(i)},${Y(x.fiNum)}`).join(' ');
       const fi = rows.findIndex(x => x.age === m.ra);
       const chip = x => x.working ? '<span class="chip">working</span>' : x.bal <= 0 ? '<span class="chip out">run out</span>' : '<span class="chip in">drawing</span>';
-      const tbl = rows.filter(x => x.age === m.age0 || x.age % 5 === 0 || x.age === m.fiAge || x.age === m.ra || x.age === m.ssAge || x.age === m.outAge || x.age === m.rmdAge).map(x => `<tr class="${x.age === m.ra ? 'fi' : ''}"><td class="num">${x.age}</td><td class="num">${x.year}</td>
-        <td class="r num">${usd0(x.spend)}</td><td class="r num">${usd0(x.covered)}</td><td class="r num">${usd0(x.need)}</td><td class="r num">${usd0(x.fiNum)}</td><td class="r num">${x.rmd ? usd0(x.rmd) : ''}</td><td class="r num">${x.taxes ? usd0(x.taxes) : ''}</td><td class="r num">${usd0(x.bal)}</td><td>${chip(x)}</td></tr>`).join('');
-      h += `<div class="card chart"><h3>Will it last?</h3><p>Until ${m.ra} you keep adding ${usd0(m.contrib)} a month. From ${m.ra} the deposits stop and each year's shortfall comes out of your investments, which keep growing at ${num(f.ret)}% after inflation. The FIRE number drops as loans end and Social Security starts. From ${m.rmdAge}, pre-tax accounts must pay out a share each year (required minimum distributions); it's taxed at ${pct1(m.tax)}, and what you don't spend is reinvested, not lost. Roth accounts have none.</p>
+      const tbl = rows.filter(x => x.age === m.age0 || x.age % 5 === 0 || x.age === m.fiAge || x.age === m.ra || x.age === m.ssAge || x.age === m.outAge || x.age === m.rmdAge).map(x => `<tr class="${x.age === m.ra ? 'fi' : ''}"><td class="num"><b>${x.age}</b><div class="muted" style="font-size:11px">${x.year}</div></td>
+        <td class="r num">${usd0(x.spend)}</td><td class="r num">${usd0(x.covered)}</td><td class="r num">${usd0(x.need)}</td><td class="r num">${x.rmd ? usd0(x.rmd) : ''}</td><td class="r num">${x.taxes ? usd0(x.taxes) : ''}</td><td class="r num">${usd0(x.bal)}</td><td>${chip(x)}</td></tr>`).join('');
+      proj = `<div class="card chart"><h3>Will it last?</h3><p>Until ${m.ra} you keep adding ${usd0(m.contrib)} a month. After that, each year's shortfall comes out of your investments, which keep growing at ${num(f.ret)}% after inflation. The FIRE number drops as loans end and Social Security starts.</p>
         <div class="legend"><span><i style="background:var(--in)"></i>Projected investments</span><span><i style="background:var(--accent)"></i>FIRE number</span></div>
         <svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Projected investments against the FIRE number by age"><g class="g">${g}</g>${lbl}<polyline class="nl" points="${nl}"/><polyline class="pl" points="${pl}"/>${fi >= 0 ? `<circle cx="${X(fi)}" cy="${Y(rows[fi].bal)}" r="5" fill="var(--in)"/>` : ''}</svg></div>
-        <div class="card tablewrap"><h3>Monthly income needed by age</h3><table><tr><th>Age</th><th>Year</th><th class="r">Spending</th><th class="r">Lifelong income after tax</th><th class="r">From investments</th><th class="r">FIRE number</th><th class="r">Required withdrawal / yr</th><th class="r">Tax on withdrawals / yr</th><th class="r">Projected investments</th><th></th></tr>${tbl}</table></div>`;
+        <details class="card tablewrap yby"><summary><h3>Year by year</h3><span class="muted">monthly spending, what covers it, and what's left invested</span></summary>
+        <table><tr><th>Age</th><th class="r">Spending / mo</th><th class="r">Lifelong income / mo<div class="muted" style="font-weight:400">after tax</div></th><th class="r">From investments / mo</th><th class="r">Required withdrawal / yr</th><th class="r">Tax on withdrawals / yr</th><th class="r">Invested</th><th></th></tr>${tbl}</table>
+        <p class="muted" style="margin:8px 0 0;font-size:12px">From ${m.rmdAge}, pre-tax accounts must pay out a share each year (required minimum distributions), taxed at ${pct1(m.tax)}; what isn't spent is reinvested, not lost. Roth accounts have none.</p></details>`;
     }
+    h = h.slice(0, answerAt) + proj + (proj ? '<h2 class="sect">Your numbers</h2>' : '') + h.slice(answerAt);
     el.innerHTML = h;
   }
 
