@@ -278,6 +278,8 @@
     if (/NET PAY/i.test(all) && /(Advice|Pay|Check) Date/i.test(all) && /EARNINGS/i.test(all)) return parsePayStub(fileName, pages);
     if (/Your Social Security Statement/i.test(all.slice(0, 600))) return parseSSA(fileName, all);
     if (/Wage and Tax/i.test(all) && /W-2/.test(all) && /Federal income tax withheld/i.test(all)) return parseW2(fileName, all);
+    if (/RETIREE ACCOUNT STATEMENT/i.test(all.slice(0, 400))) return parseRAS(fileName, all);
+    if (/Form 1099-R/i.test(all) && /Gross Distribution/i.test(all)) return parse1099R(fileName, all);
     const per = p1.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*(?:to|-|–|through)\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
     const acc = p1.match(/([A-Za-z][A-Za-z ]{1,30}?)\s*Account\s*(?:#|Number|No\.?)\s*:?\s*([*xX•\d-]{4,})/);
     if (!acc) return parsePlanStatement(fileName, pages);
@@ -385,6 +387,41 @@
     return { kind: 'w2', format: 'W-2', fileName, year, employer: emp ? emp.trim().replace(/\s+(INC|LLC|CORP|CO)\.?$/i, '') : 'Employer',
       wages: b12[0], fedWithheld: b12[1], ssWages: b34[0], ssTax: b34[1], medicareWages: b56[0], medicareTax: b56[1],
       box12, box14: b14, retirementPlan: /Ret\. plan[^\n]*\n\s*X/i.test(copy), state: state ? { state: state[1], wages: money(state[2]), tax: money(state[3]) } : null, txns: [], warnings: [] };
+  }
+
+  /* DFAS Retiree Account Statement (military retired pay, myPay): each pay item has an OLD and NEW column; NEW is
+     what's paid now. Allotments are listed by type and payee (often insurance premiums). */
+  function parseRAS(fileName, all) {
+    const item = label => { const m = all.match(new RegExp(label + '\\s+([\\d,]*\\.\\d{2})\\s+([\\d,]*\\.\\d{2})', 'i')); return m ? money(m[2]) : null; };
+    const ytd = label => { const m = all.match(new RegExp(label + ':\\s*([\\d,]*\\.\\d{2})', 'i')); return m ? money(m[1]) : null; };
+    const gross = item('GROSS PAY'), taxable = item('TAXABLE INCOME'), net = item('NET PAY');
+    if (gross == null || net == null) return null;
+    const dateM = all.match(/([A-Z]{3} \d{1,2}, \d{4})\s+([A-Z]{3} \d{1,2}, \d{4})/);
+    const cap = s => s.charAt(0) + s.slice(1).toLowerCase();
+    const allot = [...all.matchAll(/^(INSURANCE|SAVINGS|BOND|CHARITY|DISCRETIONARY|NON-DISCRETIONARY|ALLOTMENT)\s+(.+?)\s+([\d,]*\.\d{2})\s*$/gm)]
+      .map(m => ({ type: cap(m[1]), payee: m[2].trim(), amount: money(m[3]) }));
+    const ytdTaxable = ytd('TAXABLE INCOME'), ytdWithheld = ytd('FEDERAL INCOME TAX WITHHELD');
+    const paidMonths = taxable && ytdTaxable ? Math.round(ytdTaxable / taxable) : null;
+    return { kind: 'ras', format: 'DFAS retiree account statement', fileName, asOf: dateM ? toDate(dateM[1]) : null, payDue: dateM ? toDate(dateM[2]) : null,
+      gross, sbp: item('SBP COSTS') || 0, taxable: taxable != null ? taxable : gross, fitw: item('FITW') || 0, allotments: item('ALLOTMENTS') || 0, net, allot,
+      ytdTaxable, ytdWithheld, paidMonths, status: (all.match(/WITHHOLDING STATUS:\s*([A-Z ]+?)\s*\n/) || [])[1] || null,
+      crdp: money((all.match(/\(CRDP\) AMOUNT IS\s*\$([\d,]+\.\d{2})/i) || [])[1] || ''), sbpCoverage: (all.match(/SBP COVERAGE TYPE:\s*(.+?)\s+ANNUITY/i) || [])[1] || null,
+      sbpAnnuity: money((all.match(/WHICH IS\s*([\d,]+\.\d{2})/i) || [])[1] || ''), txns: [], warnings: [] };
+  }
+
+  /* Form 1099-R (pensions, annuities, retirement plan payouts). Boxes are labelled by the IRS; the amount follows
+     its label. Payer name is kept, recipient name/address/TIN never are. */
+  function parse1099R(fileName, all) {
+    const box = re => { const m = all.match(re); return m ? money(m[1]) : null; };
+    const gross = box(/1 Gross Distribution[\s\S]{0,120}?\$\s*([\d,]+\.\d{2})/i);
+    if (gross == null) return null;
+    const taxable = box(/2a Taxable amount[\s\S]{0,160}?\$\s*([\d,]+\.\d{2})/i), withheld = box(/4 Federal income tax withheld[\s\S]{0,160}?\$\s*([\d,]+\.\d{2})/i);
+    const year = +((all.match(/\b(20\d\d)\s+Profit-Sharing/) || all.match(/0101(20\d\d)-1231\1/) || all.match(/Form 1099-R[^\n]*?\b(20\d\d)\b/) || [])[1] || 0) || null;
+    const payer = (all.match(/^\s*(Defense Finance and Accounting Service|Office of Personnel Management|[A-Z][A-Za-z.&, ]{3,60}?(?:Retirement System|Pension Fund|Pension Plan|Annuity|Insurance Company|Trust Company|Investments|Financial|Fidelity[A-Za-z ]*|Vanguard[A-Za-z ]*|Schwab[A-Za-z ]*))\s*$/m) || [])[1];
+    const code = (all.match(/distribution code[^\n]*\n[^\n]*?\$[\d,]+\.\d{2}\s+([1-9A-Z]{1,2})\b/i) || [])[1] || null;
+    const mil = /Military Retired Pay|Defense Finance/i.test(all);
+    return { kind: 'r1099', format: 'Form 1099-R', fileName, year, payer: mil ? 'DFAS military retired pay' : payer ? payer.trim() : 'Payer', gross, taxable: taxable != null ? taxable : gross, withheld: withheld || 0,
+      code, military: /Military Retired Pay|Defense Finance/i.test(all), txns: [], warnings: [] };
   }
 
   /* Social Security Statement (ssa.gov): monthly benefit for each starting age 62-70, full retirement age, birth date,
@@ -934,7 +971,9 @@
       fees: all.filter(t => t.counts === 'spend' && t.category === 'Fees & interest').map(t => ({ date: t.date, desc: t.desc, amount: -t.amount, account: t.account })),
       refunds: all.filter(t => t.refund && t.counts === 'offset').map(t => ({ date: t.date, desc: t.desc, amount: t.amount, account: t.account })),
       transfers: transferMap(all),
-      copies, pay, w2s: files.map(f => f.result).filter(r => r && r.kind === 'w2').filter((w, i, a) => a.findIndex(x => x.year === w.year && x.employer === w.employer && x.wages === w.wages) === i).sort((a, b) => (b.year || 0) - (a.year || 0)), ssa: files.map(f => f.result).filter(r => r && r.kind === 'ssa').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
+      copies, pay, ras: files.map(f => f.result).filter(r => r && r.kind === 'ras').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
+      r1099s: files.map(f => f.result).filter(r => r && r.kind === 'r1099').filter((w, i, a) => a.findIndex(x => x.year === w.year && x.payer === w.payer && x.gross === w.gross) === i).sort((a, b) => (b.year || 0) - (a.year || 0)),
+      w2s: files.map(f => f.result).filter(r => r && r.kind === 'w2').filter((w, i, a) => a.findIndex(x => x.year === w.year && x.employer === w.employer && x.wages === w.wages) === i).sort((a, b) => (b.year || 0) - (a.year || 0)), ssa: files.map(f => f.result).filter(r => r && r.kind === 'ssa').sort((a, b) => (a.asOf || '') < (b.asOf || '') ? 1 : -1)[0] || null,
       duplicatesRemoved: dupes.map(d => ({ date: d.dropped.date, desc: d.dropped.desc, amount: d.dropped.amount, account: d.dropped.account, file: d.dropped.file, keptFrom: d.kept.file })),
       review,
     };

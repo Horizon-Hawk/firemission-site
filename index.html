@@ -432,7 +432,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       const kindN = k => S.files.filter(f => f.result.kind === k).length;
       const parts = [['bank', 'bank'], ['card', 'card'], ['invest', 'investment']].map(([k, l]) => by(k) ? `${by(k)} ${l}` : '')
         .concat([kindN('paystub') ? kindN('paystub') + ' pay stub' + (kindN('paystub') > 1 ? 's' : '') : '', kindN('w2') ? kindN('w2') + ' W-2' + (kindN('w2') > 1 ? 's' : '') : '',
-          kindN('ssa') ? 'Social Security statement' : '', unread ? `<b class="out">${unread} couldn't be read</b>` : '']).filter(Boolean).join(' · ');
+          kindN('ssa') ? 'Social Security statement' : '', kindN('ras') + kindN('r1099') ? 'DFAS' : '', unread ? `<b class="out">${unread} couldn't be read</b>` : '']).filter(Boolean).join(' · ');
       $('srcsum').innerHTML = `<div style="min-width:0"><b>${S.files.length} file${S.files.length > 1 ? 's' : ''} loaded</b> · ${A.length} accounts<div class="meta">${parts} · ${S.result.start} to ${S.result.end}</div></div>
         <label class="dropzone" for="fileIn"><strong>Add more files</strong><small>drop here or click</small></label>
         <div class="acts"><button class="btn" id="showFiles" type="button">Show files</button><button class="linkbtn" id="clearAll2" type="button">Remove all</button></div>`;
@@ -461,6 +461,8 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       h += `<div class="acct"><div style="min-width:0"><b>${esc(e)}</b><div class="meta">${fs.length} pay stub${fs.length > 1 ? 's' : ''} · paid ${ds[0]} to ${ds[ds.length - 1]}</div></div>
         <div class="acts"><span class="meta">Pay stubs</span><button class="linkbtn" data-dropmany="${esc(JSON.stringify(fs.map(f => f.name)))}" type="button">Remove</button></div></div>`;
     }
+    for (const f of S.files.filter(f => f.result.kind === 'ras' || f.result.kind === 'r1099')) h += `<div class="acct"><div style="min-width:0"><b>${f.result.kind === 'ras' ? 'DFAS retiree account statement' : esc(f.result.year + ' 1099-R')}</b><div class="meta">${esc(f.result.kind === 'ras' ? f.result.asOf || '' : f.result.payer)} · ${esc(f.name)}</div></div>
+        <div class="acts"><span class="meta">Retired pay</span><button class="linkbtn" data-drop="${esc(f.name)}" type="button">Remove</button></div></div>`;
     const w2f = S.files.filter(f => f.result.kind === 'w2');
     if (w2f.length) h += `<div class="acct"><div style="min-width:0"><b>W-2s</b><div class="meta">${w2f.map(f => f.result.year).sort().join(', ')} · ${esc([...new Set(w2f.map(f => f.result.employer))].join(', '))}</div></div>
         <div class="acts"><span class="meta">Tax forms</span><button class="linkbtn" data-dropmany="${esc(JSON.stringify(w2f.map(f => f.name)))}" type="button">Remove</button></div></div>`;
@@ -633,6 +635,12 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const withheldAuto = pays.length ? pays.reduce((x, p) => x + p.fedWithheldYtd * p.scale, 0) : w2 ? w2.fedWithheld : 0;
     const inc = t => R.income.filter(s => s.type === t).reduce((x, s) => x + s.total, 0);
     const milNet = yr(inc('pension')), rent = yr(inc('rental')), va = yr(inc('benefit'));
+    // retired pay: this year's DFAS statement (year to date + the months left at today's amount), else the latest 1099-R
+    const ras = R.ras, r99 = (R.r1099s || []).find(r => r.military) || (R.r1099s || [])[0];
+    const left = ras && ras.paidMonths != null ? Math.max(0, 12 - ras.paidMonths) : null;
+    const milAuto = ras && left != null ? ras.ytdTaxable + left * ras.taxable : ras ? ras.taxable * 12 : r99 ? r99.taxable : milNet;
+    const milWAuto = ras && left != null ? ras.ytdWithheld + left * ras.fitw : ras ? ras.fitw * 12 : r99 ? r99.withheld : 0;
+    const milSrc = ras ? 'DFAS statement: year to date plus the months left' : r99 ? `${r99.year} 1099-R` : 'rough: bank shows it after withholding; add the DFAS statement or 1099-R';
     const taxableInv = R.txns.filter(t => t.accountType === 'invest' && t.inWindow && ['dividend', 'interest'].includes(t.invKind) && !/roth|ira|401|403|tsp/i.test(t.account)).reduce((x, t) => x + t.amount, 0);
     const bankInt = R.txns.filter(t => t.inWindow && t.counts === 'income' && t.incomeType === 'interest').reduce((x, t) => x + t.amount, 0);
     const housing = (R.recurring || []).filter(r => r.active && r.category === 'Housing');
@@ -640,9 +648,9 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     // without the rental's own statements: rent minus its loan payments (payments include principal, so this overstates profit)
     const rentalAuto = Math.max(0, rent - (rentalLoan ? rentalLoan.perYear : 0));
     const v = {
-      wages: val('wages', wagesAuto), spouse: val('spouse', 0), mil: val('mil', milNet), rental: val('rental', rentalAuto),
+      wages: val('wages', wagesAuto), spouse: val('spouse', 0), mil: val('mil', milAuto), rental: val('rental', rentalAuto),
       divs: val('divs', yr(taxableInv)), interest: val('interest', yr(bankInt)), gains: val('gains', 0), other: val('other', 0),
-      kids: val('kids', 1), deps: val('deps', 1), itemized: val('itemized', 0), withheld: val('withheld', withheldAuto), milWithheld: val('milWithheld', 0) };
+      kids: val('kids', 1), deps: val('deps', 1), itemized: val('itemized', 0), withheld: val('withheld', withheldAuto), milWithheld: val('milWithheld', milWAuto) };
     const ordinary = v.wages + v.spouse + v.mil + v.rental + v.interest + v.other, pref = v.divs + v.gains;
     const total = ordinary + pref, std = 32200, ded = Math.max(std, v.itemized);
     const taxable = Math.max(0, total - ded), ordTaxable = Math.max(0, taxable - pref);
@@ -651,7 +659,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const niit = Math.max(0, Math.min(v.rental + v.divs + v.interest + v.gains, total - 250000)) * 0.038;
     const addMed = Math.max(0, v.wages + v.spouse - 250000) * 0.009;
     const tax = income - credits + niit + addMed, paid = v.withheld + v.milWithheld;
-    return { tx, v, auto: { wages: wagesAuto, mil: milNet, rental: rentalAuto, divs: yr(taxableInv), interest: yr(bankInt), withheld: withheldAuto },
+    return { tx, v, milSrc, auto: { wages: wagesAuto, mil: milAuto, milWithheld: milWAuto, rental: rentalAuto, divs: yr(taxableInv), interest: yr(bankInt), withheld: withheldAuto },
       va, rent, housing, rentalLoan, ordinary, pref, total, std, ded, taxable, income, credits, niit, addMed, tax, paid,
       effective: total > 0 ? tax / total : 0, marginal: bracketOf(ordTaxable), balance: paid - tax };
   }
@@ -667,7 +675,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <div class="split"><div class="txform">
         ${inp('wages', 'Your wages (taxable)', e.auto.wages, 'pay stub pace, after pre-tax deductions')}
         ${inp('spouse', 'Spouse wages (taxable)', 0, 'from her W-2 box 1 or pay stubs')}
-        ${inp('mil', 'Military retired pay, gross', e.auto.mil, 'rough: bank shows it after withholding; use the DFAS 1099-R')}
+        ${inp('mil', 'Military retired pay, taxable', e.auto.mil, esc(e.milSrc))}
         ${inp('rental', 'Rental profit', e.auto.rental, `rough: rent ${usd0(e.rent)} a year minus the loan you pick below; needs the house statements`)}
         ${loanSel}
         ${inp('divs', 'Dividends (taxable accounts)', e.auto.divs, 'Robinhood, not the Roth')}
@@ -678,7 +686,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
         ${inp('deps', 'Other dependents', 1)}
         ${inp('itemized', 'Itemized deductions, if more than standard', 0, 'home mortgage interest + property and sales tax')}
         ${inp('withheld', 'Federal tax withheld from your pay', e.auto.withheld, 'pay stub pace')}
-        ${inp('milWithheld', 'Withheld from military retired pay', 0, 'DFAS statement or 1099-R box 4')}
+        ${inp('milWithheld', 'Withheld from military retired pay', e.auto.milWithheld, e.auto.milWithheld ? 'from DFAS' : 'DFAS statement or 1099-R box 4')}
       </div>
       <div class="tablewrap"><table>
         ${line('Income counted', e.total)}${e.va ? `<tr><td class="muted">VA disability, not taxed</td><td class="r num muted">${usd0(e.va)}</td></tr>` : ''}
@@ -698,7 +706,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const el = $('taxesPage');
     if (document.body.dataset.page !== 'taxes') return;
     const R = S.result;
-    if (!R || (!(R.pay || []).length && !R.ssa && !(R.w2s || []).length)) { el.innerHTML = '<div class="panel"><div class="empty">Drop pay stubs, W-2s or your Social Security statement (from ssa.gov) above to see taxes withheld, how your savings are taxed, and your earnings record.</div></div>'; return; }
+    if (!R || (!(R.pay || []).length && !R.ssa && !(R.w2s || []).length && !R.ras && !(R.r1099s || []).length)) { el.innerHTML = '<div class="panel"><div class="empty">Drop pay stubs, W-2s or your Social Security statement (from ssa.gov) above to see taxes withheld, how your savings are taxed, and your earnings record.</div></div>'; return; }
     const pays = R.pay || [];
     const sum = f => pays.reduce((x, p) => x + f(p), 0);
     const taxOf = (p, re) => p.lines.taxes.filter(l => re.test(l.name)).reduce((x, l) => x + l.ytd, 0);
@@ -721,7 +729,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
 
   function tabTaxes(R) {
     const pays = R.pay || [], ssa = R.ssa;
-    if (!pays.length && !ssa && !(R.w2s || []).length) return '<div class="empty">Drop pay stubs, W-2s or your Social Security statement (ssa.gov) to see taxes withheld, how your savings are taxed, and your earnings record.</div>';
+    if (!pays.length && !ssa && !(R.w2s || []).length && !R.ras && !(R.r1099s || []).length) return '<div class="empty">Drop pay stubs, W-2s or your Social Security statement (ssa.gov) to see taxes withheld, how your savings are taxed, and your earnings record.</div>';
     let h = '';
     for (const p of pays) {
       const y = p.ytd || {}, L = p.lines, ret = [...L.before, ...L.after].filter(l => l.kind === 'retire');
@@ -744,6 +752,21 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
           <p class="muted" style="margin:8px 0 0;font-size:13px">As printed on your newest stub. The extra amount is inside "Federal income tax withheld", not a separate line.</p>` : '<p>This stub doesn\'t print W-4 settings.</p>'}
           ${pre || roth ? `<h3 style="margin-top:14px">Retirement savings by tax type</h3><table>
             <tr><td>Pre-tax (taxed when withdrawn)</td><td class="r num">${usd0(pre)}</td></tr><tr><td>Roth (taxed now, tax-free later)</td><td class="r num">${usd0(roth)}</td></tr></table>` : ''}</div></div>`;
+    }
+    if (R.ras || (R.r1099s || []).length) {
+      const r = R.ras, list = R.r1099s || [];
+      const prem = r ? r.allot.filter(a => a.type === 'Insurance').reduce((x, a) => x + a.amount, 0) : 0;
+      h += `<div class="split">${r ? `<div class="card tablewrap"><h3>Military retired pay, monthly</h3><p>From your DFAS retiree account statement of ${r.asOf || ''}.</p><table>
+        <tr><td>Gross</td><td class="r num">${usd2(r.gross)}</td></tr>
+        ${r.sbp ? `<tr><td>Survivor Benefit Plan<div class="muted" style="font-size:12px">${esc((r.sbpCoverage || '').toLowerCase())}${r.sbpAnnuity ? ', pays ' + usd2(r.sbpAnnuity) + ' a month' : ''}; not taxed</div></td><td class="r num">−${usd2(r.sbp)}</td></tr>` : ''}
+        <tr><td><b>Taxable</b></td><td class="r num"><b>${usd2(r.taxable)}</b></td></tr>
+        <tr><td>Federal tax withheld<div class="muted" style="font-size:12px">${pct1(r.fitw / r.taxable)} of taxable</div></td><td class="r num out">−${usd2(r.fitw)}</td></tr>
+        ${r.allot.map(a => `<tr><td>${esc(a.type)}: ${esc(a.payee.toLowerCase())}</td><td class="r num">−${usd2(a.amount)}</td></tr>`).join('')}
+        <tr><td><b>To the bank</b></td><td class="r num in"><b>${usd2(r.net)}</b></td></tr></table>
+        ${r.crdp ? `<p class="muted" style="margin:8px 0 0;font-size:13px">Concurrent Retirement and Disability Pay (CRDP) is ${usd2(r.crdp)} of this; it's retired pay, so it's taxed. VA disability itself is not.</p>` : ''}</div>` : ''}
+        ${list.length ? `<div class="card tablewrap"><h3>1099-R</h3><table><tr><th>Year</th><th>Payer</th><th class="r">Taxable</th><th class="r">Withheld</th></tr>
+          ${list.map(x => `<tr><td class="num">${x.year || ''}</td><td>${esc(x.payer)}</td><td class="r num">${usd0(x.taxable)}</td><td class="r num">${usd0(x.withheld)}<div class="muted" style="font-size:11px">${pct1(x.withheld / (x.taxable || 1))}</div></td></tr>`).join('')}</table>
+          ${r && prem ? `<p class="muted" style="margin:8px 0 0;font-size:13px">The ${usd0(prem)} a month in insurance allotments is paid from retired pay after tax.</p>` : ''}</div>` : ''}</div>`;
     }
     const w2s = R.w2s || [];
     if (w2s.length) {
@@ -982,14 +1005,18 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
     const spendIn = y => target ? base : Math.max(0, base - bills.filter(b => b.end && num(b.end) <= y).reduce((x, b) => x + b.monthly, 0));
 
     // income that lasts for life
-    const life = (R ? R.income : []).filter(s => ['pension', 'benefit', 'rental'].includes(s.type)).map(s => ({ source: s.source, type: s.type, monthly: s.total / mo, on: !f.incOff[s.source] }));
+    const rasP = R && R.ras, prem = rasP ? rasP.allot.filter(a => a.type === 'Insurance').reduce((x, a) => x + a.amount, 0) : 0;
+    const life = (R ? R.income : []).filter(s => ['pension', 'benefit', 'rental'].includes(s.type)).map(s => {
+      const dfas = rasP && s.type === 'pension' && /retire|military|dfas/i.test(s.source);
+      return { source: s.source, type: s.type, monthly: dfas ? rasP.taxable : s.total / mo, premiums: dfas ? prem : 0, dfas, on: !f.incOff[s.source] };
+    });
     const lifeMo = life.filter(s => s.on).reduce((x, s) => x + s.monthly, 0);
     const ssAge = Math.min(70, Math.max(62, Math.round(num(f.ssAge) || 67))), ssFromStmt = ssa && ssa.byAge[ssAge] || 0, ss = num(f.ssMonthly) || ssFromStmt, wr = (num(f.wr) || 4) / 100, r = num(f.ret) / 100;
 
     // taxes in retirement: one rough rate. Military retired pay, rent and pre-tax withdrawals are taxed; VA disability
     // isn't; up to 85% of Social Security is. Roth withdrawals are tax-free.
     const tax = Math.min(0.6, Math.max(0, num(f.taxRate) / 100));
-    const lifeNet = life.filter(s => s.on).reduce((x, s) => x + s.monthly * (s.type === 'benefit' ? 1 : 1 - tax), 0);
+    const lifeNet = life.filter(s => s.on).reduce((x, s) => x + s.monthly * (s.type === 'benefit' ? 1 : 1 - tax) - (s.premiums || 0), 0);
     const ssNet = ss * (1 - 0.85 * tax);
     // required minimum distributions from pre-tax accounts: age 75 if born 1960 or later, 73 if 1951-59 (SECURE 2.0)
     const by = num(birthYear), rmdAge = by >= 1960 ? 75 : by >= 1951 ? 73 : 72;
@@ -1108,7 +1135,7 @@ tr.fi td { background: var(--in-soft); font-weight: 600; }
       <label class="toggle" style="margin-top:6px"><input type="checkbox" id="fTarget" data-fc="spendMode"${f.spendMode === 'target' ? ' checked' : ''}> Use my own number instead<input id="fTargetAmt" data-f="target" inputmode="numeric" value="${esc(f.target)}" placeholder="$ / month" style="width:110px;margin-left:auto;border:1px solid var(--rule-strong);border-radius:4px;background:var(--surface);padding:2px 6px;color:var(--ink)"></label>
       <p style="margin:10px 0 0">Retirement spending: <b>${usd0(m.base)}</b> a month now${m.atRetire && Math.round(m.atRetire.spend) !== Math.round(m.base) ? `, <b>${usd0(m.atRetire.spend)}</b> at ${m.ra} once loans are paid off` : ''}.</p></div>
       <div class="card"><h3>Income that lasts for life</h3><p>Keeps coming after you stop working, so it shrinks what investments must cover. Untick anything that won't last (a rental you'd sell).</p>
-      ${m.life.map(s => `<label class="toggle"><input type="checkbox" data-inc="${esc(s.source)}"${s.on ? ' checked' : ''}> ${esc(s.source)}${s.type === 'rental' ? ' <span class="muted" style="font-size:12px">rental</span>' : ''}<span class="amt num">${usd0(s.monthly)}/mo</span></label>`).join('') || '<p>No pension, benefits or rental income found in your statements.</p>'}
+      ${m.life.map(s => `<label class="toggle"><input type="checkbox" data-inc="${esc(s.source)}"${s.on ? ' checked' : ''}> ${esc(s.source)}${s.type === 'rental' ? ' <span class="muted" style="font-size:12px">rental</span>' : ''}${s.dfas ? ` <span class="muted" style="font-size:12px">taxable, from DFAS${s.premiums ? '; ' + usd0(s.premiums) + ' insurance comes out' : ''}</span>` : ''}<span class="amt num">${usd0(s.monthly)}/mo</span></label>`).join('') || '<p>No pension, benefits or rental income found in your statements.</p>'}
       <div class="toggle"><span>Social Security from age ${m.ssAge}</span><span class="amt num">${m.ss ? usd0(m.ss) + '/mo' : 'set it above'}</span></div></div></div>`;
 
     // projection
